@@ -283,13 +283,12 @@ __device__ inline void load_global_to_shared_direct(
         llvm_amdgcn_raw_buffer_load_lds(
             srsrc, // buffer resource
             lds_ptr,
-            16, // 16 bytes
+            bytes_per_thread, // 16 bytes
             offset_in_global,
             0, 
             0, // instruction offset
             static_cast<index_t>(coherency::cache_all)); // cache coherency
     }
-    __syncthreads();
 }
 
 

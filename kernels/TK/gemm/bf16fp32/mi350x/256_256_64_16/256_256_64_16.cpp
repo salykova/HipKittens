@@ -79,6 +79,7 @@ void micro_tk(const micro_globals g) {
     // Load first tile into shared memory
     load_global_to_shared_direct<2, false, st_bf<BLOCK_SIZE, K_STEP>, _gl_A, coord<st_bf<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.a, {0, 0, row, 0}, As[tic]);
     load_global_to_shared_direct<2, false, st_bf<BLOCK_SIZE, K_STEP>, _gl_B, coord<st_bf<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.b, {0, 0, col, 0}, Bs[tic]);
+    asm volatile("s_waitcnt lgkmcnt(0) vmcnt(0)");
     __builtin_amdgcn_s_barrier();
 
     if (warp_row == 1) {
@@ -88,11 +89,10 @@ void micro_tk(const micro_globals g) {
     for (int tile = 0; tile < num_tiles - 1; ++tile) {
 
         // Cluster 0
-        load_global_to_shared_direct<2, false, st_bf<BLOCK_SIZE, K_STEP>, _gl_A, coord<st_bf<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.a, {0, 0, row, tile+1}, As[toc]);
-        load_global_to_shared_direct<2, false, st_bf<BLOCK_SIZE, K_STEP>, _gl_B, coord<st_bf<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.b, {0, 0, col, tile+1}, Bs[toc]);
         load_lds_reg(tiles[0], subtile_inplace<REG_BLOCK, DOT_SLICE>(Bs[tic], {warp_col, 0}));
         load_lds_reg(tiles[1], subtile_inplace<REG_BLOCK, DOT_SLICE>(As[tic], {warp_row, 0}));
         load_lds_reg(tiles[2], subtile_inplace<REG_BLOCK, DOT_SLICE>(As[tic], {warp_row + 2, 0}));
+        load_global_to_shared_direct<2, false, st_bf<BLOCK_SIZE, K_STEP>, _gl_A, coord<st_bf<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.a, {0, 0, row, tile+1}, As[toc]);
         __builtin_amdgcn_s_barrier();
         __builtin_amdgcn_sched_barrier(0);
 
@@ -109,6 +109,7 @@ void micro_tk(const micro_globals g) {
         load_lds_reg(tiles[0], subtile_inplace<REG_BLOCK, DOT_SLICE>(Bs[tic], {warp_col, 1}));
         load_lds_reg(tiles[1], subtile_inplace<REG_BLOCK, DOT_SLICE>(As[tic], {warp_row, 1}));
         load_lds_reg(tiles[2], subtile_inplace<REG_BLOCK, DOT_SLICE>(As[tic], {warp_row + 2, 1}));
+        load_global_to_shared_direct<2, false, st_bf<BLOCK_SIZE, K_STEP>, _gl_B, coord<st_bf<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.b, {0, 0, col, tile+1}, Bs[toc]);
         __builtin_amdgcn_s_barrier();
         __builtin_amdgcn_sched_barrier(0);
 
