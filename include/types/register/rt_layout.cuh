@@ -35,15 +35,22 @@ struct accumulator {};
 /**
  * @brief A concept to check if a type is a register tile layout.
  */
-template<typename T>
+
 #ifdef KITTENS_CDNA4
+template<typename T>
+concept accum = std::is_same_v<T, accumulator>;
+template<typename T>
+concept classic = std::is_same_v<T, row> || std::is_same_v<T, col>;
+template<typename T>
 concept all = std::is_same_v<T, row> || std::is_same_v<T, col> || std::is_same_v<T, accumulator>;
 #else
+template<typename T>
 concept all = std::is_same_v<T, row> || std::is_same_v<T, col>;
 #endif
 
 /**
  * @brief A struct to generate a transposed layout.
+ * Note: on CDNA4, the accumulator layout becomes the col layout when transposed.
  */
 template<all L> struct transpose      { using type = col; };
 template<>      struct transpose<col> { using type = row; };

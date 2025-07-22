@@ -41,8 +41,6 @@ __device__ inline static void load(RT &dst, const GL &src, const COORD &idx) {
     const int row_stride = src.template stride<axis>();
     int laneid = kittens::laneid();
 
-
-    // int row_offset = laneid%16, col_offset = 4*(laneid/16);
     #ifdef KITTENS_CDNA4
     int row_offset = laneid%32, col_offset = 8*(laneid/32);
     #else
@@ -133,7 +131,7 @@ __device__ inline static void load(RT &dst, const GL &src, const COORD &idx) {
     int laneid = kittens::laneid();
 
     #ifdef KITTENS_CDNA4
-    const int col_offset = laneid%16, row_offset = 8*(laneid/16);
+    const int row_offset = 8*(laneid/32), col_offset = laneid%32;
     #else:
     const int row_offset = 4*(laneid/16), col_offset = laneid%16;
     #endif
@@ -266,38 +264,6 @@ __device__ inline static void store(const GL &dst, const RT &src, const COORD &i
     }
 }
 
-#ifdef KITTENS_CDNA4
-template<int axis, ducks::rt::accumulator_layout RT, ducks::gl::all GL, ducks::coord::tile COORD=coord<RT>>
-__device__ inline static void store(const GL &dst, const RT &src, const COORD &idx) {
-    using T = base_types::packing<typename RT::dtype>::unpacked_type;
-    using U = typename GL::dtype;
-
-    U *dst_ptr = (U*)&dst[(idx.template unit_coord<axis, 3>())];
-    const int row_stride = dst.template stride<axis>();
-    int laneid = kittens::laneid();
-
-    int col_offset = laneid%32;
-    int row_offset = laneid/32;
-
-    #pragma unroll
-    for(int i = 0; i < src.height; i++) {
-        #pragma unroll
-        for(int j = 0; j < src.width; j++) {
-            int col = src.tile_size_col*j + col_offset;
-            #pragma unroll
-            for (int ii = 0; ii < 4; ii++) {
-                int row = src.tile_size_row*i + ii * 8 + row_offset * 4;
-
-                dst_ptr[(row+0)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2].x);
-                dst_ptr[(row+1)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2].y);
-                dst_ptr[(row+2)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2 + 1].x);
-                dst_ptr[(row+3)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2 + 1].y);
-            }
-        }
-    }
-}
-#endif
-
 /**
  * @brief Store data from a register tile to a destination array in global memory with a column-major layout.
  *
@@ -317,7 +283,7 @@ __device__ inline static void store(const GL &dst, const RT &src, const COORD &i
     const int laneid = kittens::laneid();
 
     #ifdef KITTENS_CDNA4
-    const int col_offset = laneid%16, row_offset = 8*(laneid/16);
+    const int row_offset = 8*(laneid/32), col_offset = laneid%32;
     #else
     const int row_offset = 4*(laneid/16), col_offset = laneid%16;
     #endif
@@ -355,6 +321,39 @@ __device__ inline static void store(const GL &dst, const RT &src, const COORD &i
 
     }
 }
+
+#ifdef KITTENS_CDNA4
+template<int axis, ducks::rt::accumulator_layout RT, ducks::gl::all GL, ducks::coord::tile COORD=coord<RT>>
+__device__ inline static void store(const GL &dst, const RT &src, const COORD &idx) {
+    using T = base_types::packing<typename RT::dtype>::unpacked_type;
+    using U = typename GL::dtype;
+
+    U *dst_ptr = (U*)&dst[(idx.template unit_coord<axis, 3>())];
+    const int row_stride = dst.template stride<axis>();
+    int laneid = kittens::laneid();
+
+    int col_offset = laneid%32;
+    int row_offset = laneid/32;
+
+    #pragma unroll
+    for(int i = 0; i < src.height; i++) {
+        #pragma unroll
+        for(int j = 0; j < src.width; j++) {
+            int col = src.tile_size_col*j + col_offset;
+            #pragma unroll
+            for (int ii = 0; ii < 4; ii++) {
+                int row = src.tile_size_row*i + ii * 8 + row_offset * 4;
+
+                dst_ptr[(row+0)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2].x);
+                dst_ptr[(row+1)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2].y);
+                dst_ptr[(row+2)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2 + 1].x);
+                dst_ptr[(row+3)*row_stride + col] = base_types::convertor<U, T>::convert(src.tiles[i][j].data[ii * 2 + 1].y);
+            }
+        }
+    }
+}
+#endif
+
 template<ducks::rt::all RT, ducks::gl::all GL, ducks::coord::tile COORD=coord<RT>>
 __device__ inline static void store(const GL &dst, const RT &src, const COORD &idx) {
     store<2, RT, GL, COORD>(dst, src, idx);

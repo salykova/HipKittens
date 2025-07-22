@@ -23,7 +23,11 @@ namespace kittens {
  * @param dst[out] Reference to the destination register base tile where the result will be stored.
  * @param src[in] Reference to the source register base tile to be swapped.
  */
+#ifdef KITTENS_CDNA4
+template<typename T, ducks::rt_layout::classic layout>
+#else
 template<typename T, ducks::rt_layout::all layout>
+#endif
 __device__ inline void swap_layout(rt_base<T, typename ducks::rt_layout::transpose<layout>::type> &dst, const rt_base<T, layout> &src) {
     int lane = laneid();
 
@@ -85,6 +89,72 @@ __device__ inline void swap_layout(rt_base<T, typename ducks::rt_layout::transpo
     dst.data[3].y = dst_tmp[7];
     #endif
 }
+
+#ifdef KITTENS_CDNA4
+template<typename T, ducks::rt_layout::accum layout>
+__device__ inline void swap_layout(rt_base<T, typename ducks::rt_layout::col> &dst_lo, rt_base<T, typename ducks::rt_layout::col> &dst_hi, const rt_base<T, layout> &src) {
+
+    // static_assert(std::is_same_v<T, bf16>, "swap_layout is only supported for bf16 on CDNA4");
+
+    int lane = laneid();
+    int block_offset = (lane / 32) * 4;
+
+    T src_tmp_lo[8] = {
+        src.data[0].x, src.data[0].y,
+        src.data[1].x, src.data[1].y,
+        src.data[2].x, src.data[2].y,
+        src.data[3].x, src.data[3].y
+    };
+
+    T dst_tmp_lo[8];
+    #pragma unroll
+    for(int k = 0; k < 8; k++) {
+        if constexpr (std::is_same_v<T, bf16>) {
+            dst_tmp_lo[block_offset^k] = __float2bfloat16(__shfl(__bfloat162float(src_tmp_lo[block_offset^k]), lane ^ ((k / 4) * 32)));
+        }
+        else {
+            dst_tmp_lo[block_offset^k] = __shfl(src_tmp_lo[block_offset^k], lane ^ ((k / 4) * 32));
+        }
+    }
+
+    dst_lo.data[0].x = dst_tmp_lo[0];
+    dst_lo.data[0].y = dst_tmp_lo[1];
+    dst_lo.data[1].x = dst_tmp_lo[2];
+    dst_lo.data[1].y = dst_tmp_lo[3];
+    dst_lo.data[2].x = dst_tmp_lo[4];
+    dst_lo.data[2].y = dst_tmp_lo[5];
+    dst_lo.data[3].x = dst_tmp_lo[6];
+    dst_lo.data[3].y = dst_tmp_lo[7];
+
+    T src_tmp_hi[8] = {
+        src.data[4].x, src.data[4].y,
+        src.data[5].x, src.data[5].y,
+        src.data[6].x, src.data[6].y,
+        src.data[7].x, src.data[7].y
+    };
+
+    T dst_tmp_hi[8];
+    #pragma unroll
+    for(int k = 0; k < 8; k++) {
+        if constexpr (std::is_same_v<T, bf16>) {
+            dst_tmp_hi[block_offset^k] = __float2bfloat16(__shfl(__bfloat162float(src_tmp_hi[block_offset^k]), lane ^ ((k / 4) * 32)));
+        }
+        else {
+            dst_tmp_hi[block_offset^k] = __shfl(src_tmp_hi[block_offset^k], lane ^ ((k / 4) * 32));
+        }
+    }
+
+    dst_hi.data[0].x = dst_tmp_hi[0];
+    dst_hi.data[0].y = dst_tmp_hi[1];
+    dst_hi.data[1].x = dst_tmp_hi[2];
+    dst_hi.data[1].y = dst_tmp_hi[3];
+    dst_hi.data[2].x = dst_tmp_hi[4];
+    dst_hi.data[2].y = dst_tmp_hi[5];
+    dst_hi.data[3].x = dst_tmp_hi[6];
+    dst_hi.data[3].y = dst_tmp_hi[7];
+}
+#endif
+
 /**
  * @brief Swaps the layout of a register tile.
  *
@@ -98,8 +168,13 @@ __device__ inline void swap_layout(rt_base<T, typename ducks::rt_layout::transpo
  * @param dst[out] Reference to the destination register tile where the result will be stored.
  * @param src[in] Reference to the source register tile to be swapped.
  */
+#ifdef KITTENS_CDNA4
+template<typename T2, int _height, int _width, ducks::rt_layout::classic layout>
+#else
 template<typename T2, int _height, int _width, ducks::rt_layout::all layout>
+#endif
 __device__ static inline void swap_layout(rt<T2, _height, _width, typename ducks::rt_layout::transpose<layout>::type> &dst, const rt<T2, _height, _width, layout> &src) {
+
     #pragma unroll
     for(int i = 0; i < dst.height; i++) {
         #pragma unroll
@@ -108,6 +183,20 @@ __device__ static inline void swap_layout(rt<T2, _height, _width, typename ducks
         }
     }
 }
+
+#ifdef KITTENS_CDNA4
+template<typename T2, int _height, int _width, ducks::rt_layout::accum layout>
+__device__ static inline void swap_layout(rt<T2, _height, _width, typename ducks::rt_layout::col> &dst, const rt<T2, _height, _width, layout> &src) {
+
+    #pragma unroll
+    for(int i = 0; i < dst.height; i += 2) {
+        #pragma unroll
+        for(int j = 0; j < dst.width; j++) {
+            swap_layout(dst.tiles[i][j], dst.tiles[i+1][j], src.tiles[i / 2][j]);
+        }
+    }
+}
+#endif
 
 /**
  * @brief Swaps the layout of a register base tile in place.

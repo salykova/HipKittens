@@ -52,6 +52,9 @@ using col_vec = T::col_vec;
 // register tile layouts
 using row_l = ducks::rt_layout::row;
 using col_l = ducks::rt_layout::col;
+#ifdef KITTENS_CDNA4
+using accum_l = ducks::rt_layout::accumulator;
+#endif
 
 // register vector layouts
 using align_l = ducks::rv_layout::align;

@@ -45,7 +45,7 @@ struct identifier {};
  * the register layouts used by the tensor cores. ThunderKittens wants you working with tiles
  * where possible!
  */
-template<typename _T, size_t _length, ducks::rv_layout::all _layout=ducks::rv_layout::naive>
+template<typename _T, size_t _length, ducks::rt_layout::all _tile_layout, ducks::rv_layout::all _layout=ducks::rv_layout::naive>
 struct rv {
     using identifier = ducks::rv::identifier; ///< Type identifier for the rv structure.
     static_assert(kittens::ducks::base_types::T1<_T>); // confirm it's a supported type
@@ -54,10 +54,13 @@ struct rv {
     using T = kittens::base_types::packing<_T>::unpacked_type;
     using T2 = kittens::base_types::packing<_T>::packed_type;
     using dtype = std::conditional_t<is_naive, T, T2>; ///< Data type of the matrix elements
-
+    
+    static_assert(std::is_same_v<_tile_layout, ducks::rt_layout::row> || std::is_same_v<_tile_layout, ducks::rt_layout::col>, "rv for accumulator tiles are not supported yet.");
+    
     static constexpr int length = _length; ///< Length in elements.
-    static_assert(length % kittens::TILE_ROW_DIM<T> == 0, "Length must be divisible by the tile dimension");
-    static constexpr int tiles  = _length / kittens::TILE_ROW_DIM<T>; ///< Length in subtiles, aliased for consistency with sv type
+    static constexpr int rows = std::is_same_v<layout, ducks::rt_layout::accumulator> ? kittens::ACCUMULATOR_TILE_ROW_DIM<T> : std::is_same_v<layout, ducks::rt_layout::row> ? kittens::TILE_ROW_DIM<T> : kittens::TILE_COL_DIM<T>;
+    static_assert(length % rows == 0, "Length must be divisible by the tile dimension");
+    static constexpr int tiles  = _length / rows; ///< Length in subtiles, aliased for consistency with sv type
     static constexpr int inner_dim = layout::inner_dim; ///< Internal layout within a subtile. Either 1 or 2.
     static constexpr int outer_dim = is_naive ? (tiles+3)/4 : tiles; ///< Outer dim (also length in tiles)
 
