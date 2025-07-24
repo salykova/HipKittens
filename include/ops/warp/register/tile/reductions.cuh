@@ -34,10 +34,19 @@ __device__ static inline void row_reduce(V &row_accum, const T &src, const V &sr
     using RT2 = V::dtype;
     using RT = base_types::packing<RT2>::unpacked_type;
 
+    #ifdef KITTENS_CDNA4
+    const int leader = laneid() % 32;
+    #else
     const int leader = laneid() % 16;
+    #endif
+
     #pragma unroll
     for(int i = 0; i < src.height; i++) {
-        RT2 accum_packed = op::template op<RT2>(src.tiles[i][0].data[0], src.tiles[i][0].data[1]);
+        RT2 accum_packed = src.tiles[i][0].data[0];
+        for (int k = 1; k < src.packed_per_tile; k++) {
+            accum_packed = op::template op<RT2>(accum_packed, src.tiles[i][0].data[k]);
+        }
+
         #pragma unroll
         for(int j = 1; j < src.width; j++) {
             #pragma unroll
@@ -46,11 +55,14 @@ __device__ static inline void row_reduce(V &row_accum, const T &src, const V &sr
             }
         }
         RT accum_single = op::template op<RT>(accum_packed.x, accum_packed.y);
-
         // Now we need to do a lil shuffle to make everyone happy.
 
+        #ifdef KITTENS_CDNA4
+        accum_single = op::template op<RT>(accum_single, packed_shfl_down(MASK_ALL, accum_single, 32));
+        #else
         accum_single = op::template op<RT>(accum_single, packed_shfl_down(MASK_ALL, accum_single, 32));
         accum_single = op::template op<RT>(accum_single, packed_shfl_down(MASK_ALL, accum_single, 16));
+        #endif
 
         if(reset) {
             row_accum[i][0].x = accum_single;

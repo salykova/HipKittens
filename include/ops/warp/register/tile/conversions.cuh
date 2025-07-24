@@ -288,9 +288,9 @@ __device__ inline rt_base<T2, typename ducks::rt_layout::transpose<layout>::type
 }
 
 #ifdef KITTENS_CDNA4
-template<typename T2, ducks::rt_layout::accum layout>
-__device__ inline rt_base<T2, typename ducks::rt_layout::col>& swap_layout_inplace(const rt_base<T2, layout> &src) {
-    rt_base<T2, typename ducks::rt_layout::col> &dst = *(rt_base<T2, typename ducks::rt_layout::col>*)(&src);
+template<typename DesiredLayout, typename T2, ducks::rt_layout::accum layout>
+__device__ inline rt_base<T2, DesiredLayout>& swap_layout_inplace(const rt_base<T2, layout> &src) {
+    rt_base<T2, DesiredLayout> &dst = *(rt_base<T2, DesiredLayout>*)(&src);
     swap_layout(dst, src);
     return dst;
 }
@@ -325,16 +325,16 @@ __device__ static inline rt<T2, _rows, _cols, typename ducks::rt_layout::transpo
 }
 
 #ifdef KITTENS_CDNA4
-template<typename T2, int _rows, int _cols, ducks::rt_layout::accum layout>
-__device__ static inline rt<T2, _rows, _cols, typename ducks::rt_layout::col>& swap_layout_inplace(rt<T2, _rows, _cols, layout> &tile) {
+template<typename DesiredLayout, typename T2, int _rows, int _cols, ducks::rt_layout::accum layout>
+__device__ static inline rt<T2, _rows, _cols, DesiredLayout>& swap_layout_inplace(rt<T2, _rows, _cols, layout> &tile) {
     #pragma unroll
     for(int i = 0; i < tile.height; i++) {
         #pragma unroll
         for(int j = 0; j < tile.width; j++) {
-            swap_layout_inplace(tile.tiles[i][j]);
+            swap_layout_inplace<DesiredLayout>(tile.tiles[i][j]);
         }
     }
-    return *(rt<T2, _rows, _cols, typename ducks::rt_layout::col>*)(&tile);
+    return *(rt<T2, _rows, _cols, DesiredLayout>*)(&tile);
 }
 #endif
 
