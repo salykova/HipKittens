@@ -22,9 +22,9 @@ torch.set_printoptions(
 )
 
 # Inputs
-B = 1
-H = 1
-N = 32
+B = 16
+H = 16
+N = 4096
 D = 64
 causal = False
 dtype = torch.bfloat16
@@ -33,22 +33,18 @@ k = torch.randn(B, H, N, D, dtype=dtype, device='cuda', requires_grad=True)
 v = torch.randn(B, H, N, D, dtype=dtype, device='cuda', requires_grad=True)
 
 out = torch.zeros(B, H, N, D, dtype=dtype, device='cuda', requires_grad=True)
-out_ref = torch.zeros(B, H, N, D, dtype=dtype, device='cuda', requires_grad=True)
 out_ref_pytorch = scaled_dot_product_attention(q, k, v, is_causal=causal)
 
 tk_kernel.dispatch_micro(q, k, v, out)
-tk_golden.dispatch_micro(q, k, v, out_ref)
 
 print("out")
-print(out)
-print("out_ref")
-print(out_ref)
-# print("out_ref_pytorch")
-# print(out_ref_pytorch[0, 0, 0:16, 0:16])
+print(out[0, 0, 0:16, 0:16])
+print("out_ref_pytorch")
+print(out_ref_pytorch[0, 0, 0:16, 0:16])
 
-diff = out - out_ref
+diff = out - out_ref_pytorch
 print("diff")
-print(diff)
+print(diff[0, 0, 0:16, 0:16])
 
 max_error = diff.max().item()
 print("max_error")

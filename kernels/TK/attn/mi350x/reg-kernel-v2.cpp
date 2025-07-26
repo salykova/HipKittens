@@ -1,6 +1,6 @@
 #include "kittens.cuh"
 #include "pyutils/pyutils.cuh"
-#include "../utils.cpp"
+#include "utils.cpp"
 
 constexpr int ATTN_B = 16; // batch size
 constexpr int ATTN_H = 16; // number of heads

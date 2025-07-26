@@ -5,7 +5,7 @@
 constexpr int ATTN_B = 1; // batch size
 constexpr int ATTN_H = 1; // number of heads
 constexpr int ATTN_N = 32; // sequence length
-constexpr int ATTN_D = 64; // dimension
+constexpr int ATTN_D = 32; // dimension
 constexpr int BLOCK_SIZE = 32; // block size
 
 #define NUM_WARPS 1
@@ -97,28 +97,28 @@ __global__ void attend_ker(const attn_globals<D> g) {
         
         // Update max in-place and compute correction
         row_max(max_vec, att_block, max_vec);  // max_vec = max(max_vec, row_max(att_block))
-        // sub(max_vec_prev, max_vec_prev, max_vec);  // max_vec_prev = old_max - new_max
-        // exp2(max_vec_prev, max_vec_prev);  // max_vec_prev = exp2(old_max - new_max)
+        sub(max_vec_prev, max_vec_prev, max_vec);  // max_vec_prev = old_max - new_max
+        exp2(max_vec_prev, max_vec_prev);  // max_vec_prev = exp2(old_max - new_max)
         
         // // Apply max normalization to attention scores
         sub_row(att_block, att_block, max_vec);
-        // exp2(att_block, att_block);
+        exp2(att_block, att_block);
         
         // // Update running normalization
-        // mul(norm_vec, norm_vec, max_vec_prev);
-        // row_sum(norm_vec, att_block, norm_vec);
+        mul(norm_vec, norm_vec, max_vec_prev);
+        row_sum(norm_vec, att_block, norm_vec);
         
         copy(att_block_bf16, att_block);  // float → bf16, same layout
         att_block_row_bf16 = swap_layout_inplace<row_l>(att_block_bf16);
 
         // Update running output
-        // mul_row(o_reg, o_reg, max_vec_prev);
+        mul_row(o_reg, o_reg, max_vec_prev);
         // O += A @ V
         mma_AB(o_reg, att_block_row_bf16, v_reg, o_reg);
     }
 
     // 16. O_i = diag(l_i)^-1 @ O_i
-    // div_row(o_reg, o_reg, norm_vec);
+    div_row(o_reg, o_reg, norm_vec);
 
     // 17. Store O_i back to global memory.
     store(g.Og, o_reg, {batch_idx, head_idx, tile_idx, 0});
