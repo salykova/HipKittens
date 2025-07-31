@@ -242,11 +242,6 @@ template<> struct convertor<float2, bf16_2> {
         return 	__bfloat1622float2(u);
     }
 };
-// template<> struct convertor<bf16_2, float2> {
-//     static __host__ __device__ inline bf16_2 convert(const float2 & u) {
-//         return 	__float22bfloat162_rn(u);
-//     }
-// };
 template<>
 struct convertor<bf16_2, float2> {
     static __host__ __device__ inline bf16_2 convert(const float2 &u) {
@@ -256,6 +251,8 @@ struct convertor<bf16_2, float2> {
         };
     }
 };
+
+
 template<> struct convertor<float, half> {
     static __host__ __device__ inline float convert(const half & u) {
         return __half2float(u);
