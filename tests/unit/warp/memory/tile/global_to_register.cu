@@ -14,7 +14,7 @@ struct g2r_wrapper_2d {
         test_info this_result;
         this_result.label = generate_test_name<H,W,NUM_WORKERS,args...>(test::test_identifier);
         if constexpr (test::template valid<H, W, NUM_WORKERS, L, args...>::value) {
-            constexpr int B = 1, D = 1, R = 1, C = 1;
+            constexpr int B = 3, D = 1, R = 4, C = 5;
             constexpr int rt_height = kittens::rt_base<rt_dtype, L>::rows;
             constexpr int rt_width = kittens::rt_base<rt_dtype, L>::cols;
             constexpr int SIZE = H*W*rt_height*rt_width * B * D * R * C;
