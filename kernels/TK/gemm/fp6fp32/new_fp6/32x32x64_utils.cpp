@@ -293,8 +293,8 @@ __device__ inline void load_global_to_shared_direct_with_swizzled_offsets_fp6(
                 "ds_read_b128 %0, %2 offset:%3\n"
                 "ds_read_b64 %1, %2 offset:%4\n"
                 // "s_waitcnt lgkmcnt(0)\n"
-                : "=v"(*reinterpret_cast<__uint128_t*>(&dst.tiles[i][j].data[0])),
-                  "=v"(*reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(&dst.tiles[i][j].data[0]) + 16))
+                : "=v"(*std::bit_cast<__uint128_t*>(&dst.tiles[i][j].data[0])),
+                  "=v"(*std::bit_cast<uint64_t*>(std::bit_cast<uint8_t*>(&dst.tiles[i][j].data[0]) + 16))
                 : "v"(addr),
                 "i"(i * row_stride + j * tile_stride),
                 "i"(i * row_stride + j * tile_stride + 16)
@@ -352,31 +352,6 @@ __device__ inline void load_global_to_shared_direct_with_swizzled_offsets_fp6(
         }
     }
  }
-
- template<ducks::rt::row_layout RT>
- __device__ inline static void shuffle_reg_row_fp6(RT &dst) {
-
-    const int laneid = kittens::laneid();
-    const int should_shuffle = (laneid / 32);
- 
-     #pragma unroll
-     for(int i = 0; i < dst.height; i++) {
-
-        #pragma unroll
-        for(int j = 0; j < dst.width; j++) {
-
-            if (__builtin_expect(should_shuffle, 0)) {
-                __uint128_t hi = *reinterpret_cast<__uint128_t*>(&dst.tiles[i][j].data[0]);
-                uint64_t lo = *reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(&dst.tiles[i][j].data[0]) + 16);
-
-                *reinterpret_cast<uint64_t*>(&dst.tiles[i][j].data[0]) = lo;
-                *reinterpret_cast<__uint128_t*>(reinterpret_cast<uint8_t*>(&dst.tiles[i][j].data[0]) + 8) = hi;
-            }
-        }
-    }
- }
-
-
 
  template<int axis, ducks::rt::row_layout RT, ducks::gl::all GL, ducks::coord::tile COORD=coord<RT>>
 __device__ inline static void store_fp6(const GL &dst, const RT &src, const COORD &idx) {

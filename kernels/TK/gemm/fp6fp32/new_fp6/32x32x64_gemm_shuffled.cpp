@@ -142,8 +142,8 @@ void micro_tk(const micro_globals g) {
     for (int tile = 0; tile < num_tiles - 2; ++tile) {
 
         // Cluster 0
-        load_lds_reg_row_fp6_shuffled(A_tile[1], subtile_inplace<REG_BLOCK_M, DOT_SLICE>(*As_ptrs[tic], {warp_row, 1}));
         load_global_to_shared_direct_with_swizzled_offsets_fp6<2, false, st_f6<BLOCK_SIZE, K_STEP>, _gl_A, coord<st_f6<BLOCK_SIZE, K_STEP>>, NUM_THREADS>(g.a, {0, 0, row, tile+2}, *As_ptrs[toc], swizzled_offsets_A);
+        load_lds_reg_row_fp6_shuffled(A_tile[1], subtile_inplace<REG_BLOCK_M, DOT_SLICE>(*As_ptrs[tic], {warp_row, 1}));
         load_lds_reg_row_fp6_shuffled(B_tile[1], subtile_inplace<REG_BLOCK_N, DOT_SLICE>(*Bs_ptrs[tic], {warp_col, 1}));
         // asm volatile("s_waitcnt lgkmcnt(0)");
         __builtin_amdgcn_s_barrier();
@@ -151,8 +151,6 @@ void micro_tk(const micro_globals g) {
 
         // Cluster 1
         __builtin_amdgcn_s_setprio(1);
-        shuffle_reg_row_fp6(B_tile[0]);
-        shuffle_reg_row_fp6(A_tile[0]);
         mma_ABt(C_accum, A_tile[0], B_tile[0], C_accum);
         __builtin_amdgcn_s_setprio(0);
         __builtin_amdgcn_s_barrier();
@@ -170,8 +168,6 @@ void micro_tk(const micro_globals g) {
 
         // Cluster 3 (compute)
         __builtin_amdgcn_s_setprio(1);
-        shuffle_reg_row_fp6(B_tile[1]);
-        shuffle_reg_row_fp6(A_tile[1]);
         mma_ABt(C_accum, A_tile[1], B_tile[1], C_accum);
         __builtin_amdgcn_s_setprio(0);
         __builtin_amdgcn_s_barrier();
@@ -189,8 +185,6 @@ void micro_tk(const micro_globals g) {
 
     // Cluster 1
     __builtin_amdgcn_s_setprio(1);
-    shuffle_reg_row_fp6(B_tile[0]);
-    shuffle_reg_row_fp6(A_tile[0]);
     mma_ABt(C_accum, A_tile[0], B_tile[0], C_accum);
     __builtin_amdgcn_s_setprio(0);
     __builtin_amdgcn_s_barrier();
@@ -206,8 +200,6 @@ void micro_tk(const micro_globals g) {
 
     // Cluster 3 (compute)
     __builtin_amdgcn_s_setprio(1);
-    shuffle_reg_row_fp6(B_tile[1]);
-    shuffle_reg_row_fp6(A_tile[1]);
     mma_ABt(C_accum, A_tile[1], B_tile[1], C_accum);
     __builtin_amdgcn_s_setprio(0);
     __builtin_amdgcn_s_barrier();
@@ -223,8 +215,6 @@ void micro_tk(const micro_globals g) {
 
     // Cluster 1
     __builtin_amdgcn_s_setprio(1);
-    shuffle_reg_row_fp6(B_tile[0]);
-    shuffle_reg_row_fp6(A_tile[0]);
     mma_ABt(C_accum, A_tile[0], B_tile[0], C_accum);
     __builtin_amdgcn_s_setprio(0);
     __builtin_amdgcn_s_barrier();
@@ -236,8 +226,6 @@ void micro_tk(const micro_globals g) {
 
     // Cluster 3 (compute)
     __builtin_amdgcn_s_setprio(1);
-    shuffle_reg_row_fp6(B_tile[1]);
-    shuffle_reg_row_fp6(A_tile[1]);
     mma_ABt(C_accum, A_tile[1], B_tile[1], C_accum);
     __builtin_amdgcn_s_setprio(0);
     __builtin_amdgcn_s_barrier();
