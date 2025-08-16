@@ -365,7 +365,7 @@ __device__ inline void load_global_to_shared_direct_with_swizzled_offsets_fp6(
         #pragma unroll
         for(int j = 0; j < dst.width; j++) {
 
-            if (should_shuffle) {
+            if (__builtin_expect(should_shuffle, 0)) {
                 __uint128_t hi = *reinterpret_cast<__uint128_t*>(&dst.tiles[i][j].data[0]);
                 uint64_t lo = *reinterpret_cast<uint64_t*>(reinterpret_cast<uint8_t*>(&dst.tiles[i][j].data[0]) + 16);
 
