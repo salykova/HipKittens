@@ -243,7 +243,7 @@ __global__ __launch_bounds__(512, 2) void matmul_device(const kittens::gl<fp8e4m
     constexpr int NUM_WARPS = WARPS_COL * WARPS_ROW;
     constexpr int BLOCK_SIZE_ROW = 256;
     constexpr int BLOCK_SIZE_COL = 256;
-    constexpr int BLOCK_K = 64;
+    constexpr int BLOCK_K = 128;
     constexpr int blocks_per_row = M / BLOCK_SIZE_ROW; // Number of blocks per matrix row
     constexpr int blocks_per_col = N / BLOCK_SIZE_COL; // Number of blocks per matrix col
     constexpr int total_blocks_needed = blocks_per_row * blocks_per_col; // Total blocks needed
