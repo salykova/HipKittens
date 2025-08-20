@@ -236,7 +236,7 @@ TimingResult matmul_ref(const std::vector<fp8e4m3>& a, const std::vector<fp8e4m3
 #endif
 
 template <int M, int N, int K>
-__global__ __launch_bounds__(512, 2) void matmul_device(const kittens::gl<fp8e4m3, 1, 1, M, K> A, const kittens::gl<fp8e4m3, 1, 1, N, K> B, const kittens::gl<float, 1, 1, M, N> C) {
+__global__ __launch_bounds__(512, 2) void matmul_device(const kittens::gl<fp8e4m3, 1, 1, M, K> A, const kittens::gl<fp8e4m3, 1, 1, N, K> B, const kittens::gl<bf16, 1, 1, M, N> C) {
     constexpr int WARPS_COL = 2;
     constexpr int WARPS_ROW = 4;
     constexpr int NUM_WARPS = WARPS_COL * WARPS_ROW;
@@ -258,9 +258,31 @@ __global__ __launch_bounds__(512, 2) void matmul_device(const kittens::gl<fp8e4m
 
     int global_block_id = blockIdx.x;
 
+    // Original WGID.
+    int wgid = global_block_id;
+    const int NUM_WGS = gridDim.x;
+    const int NUM_XCDS = 8;
+    const int CUS_PER_XCD = 32;
+    const int NUM_CUS = CUS_PER_XCD * NUM_XCDS;
+    // Swizzle chiplet so that wgids are in the same XCD.
+    wgid = (wgid % NUM_XCDS) * (NUM_WGS / NUM_XCDS) + (wgid / NUM_XCDS);
+    // Swizzle for better L2 within the same XCD.
+    const int WGM = 8;
+    const int num_pid_m = (M + BLOCK_SIZE_ROW - 1) / BLOCK_SIZE_ROW;
+    const int num_pid_n = (N + BLOCK_SIZE_COL - 1) / BLOCK_SIZE_COL;
+    int num_wgid_in_group = WGM * num_pid_n;
+    int group_id = wgid / num_wgid_in_group;
+    int first_pid_m = group_id * WGM;
+    int group_size_m = min(num_pid_m - first_pid_m, WGM);
+    int pid_m = first_pid_m + ((wgid % num_wgid_in_group) % group_size_m);
+    int pid_n = (wgid % num_wgid_in_group) / group_size_m;
+    // Assign the tile's row/column based on the pid_m and pid_n.
+    const int row = pid_m; // blockIdx.x
+    const int col = pid_n; // blockIdx.y
+
     // Convert linear block ID to 2D coordinates
-    int block_row = global_block_id / blocks_col;
-    int block_col = global_block_id % blocks_col;
+    int block_row = row;
+    int block_col = col;
     int block_m = block_row * BLOCK_SIZE_ROW;
     int block_n = block_col * BLOCK_SIZE_COL;
 
@@ -364,7 +386,7 @@ __global__ __launch_bounds__(512, 2) void matmul_device(const kittens::gl<fp8e4m
 }
 
 template <int M, int N, int K, int CUs>
-TimingResult matmul_host(const std::vector<fp8e4m3>& a, const std::vector<fp8e4m3>& b, std::vector<float>& c, 
+TimingResult matmul_host(const std::vector<fp8e4m3>& a, const std::vector<fp8e4m3>& b, std::vector<bf16>& c,
                         int warmup_iters = 3, int timing_iters = 20) {
     constexpr int threads_per_warp = 64;
     constexpr int warps_per_cu = 8;
@@ -386,26 +408,26 @@ TimingResult matmul_host(const std::vector<fp8e4m3>& a, const std::vector<fp8e4m
     
     // Allocate device memory
     fp8e4m3 *d_a, *d_b;
-    float *d_c;
+    bf16 *d_c;
     hipMalloc(&d_a, M*K*sizeof(fp8e4m3));
     hipMalloc(&d_b, N*K*sizeof(fp8e4m3));
-    hipMalloc(&d_c, M*N*sizeof(float));
+    hipMalloc(&d_c, M*N*sizeof(bf16));
     HipCheckError();
     
     // Copy data to device
     hipMemcpy(d_a, a.data(), M*K*sizeof(fp8e4m3), hipMemcpyHostToDevice);
     hipMemcpy(d_b, b.data(), N*K*sizeof(fp8e4m3), hipMemcpyHostToDevice);
-    hipMemset(d_c, 0, M*N*sizeof(float));
+    hipMemset(d_c, 0, M*N*sizeof(bf16));
     HipCheckError();
     
     // Create global memory objects
     kittens::gl<fp8e4m3, 1, 1, M, K> A(d_a, nullptr, nullptr, nullptr, nullptr);
     kittens::gl<fp8e4m3, 1, 1, N, K> B(d_b, nullptr, nullptr, nullptr, nullptr);
-    kittens::gl<float, 1, 1, M, N> C(d_c, nullptr, nullptr, nullptr, nullptr);
+    kittens::gl<bf16, 1, 1, M, N> C(d_c, nullptr, nullptr, nullptr, nullptr);
     
     // Warmup iterations
     for (int i = 0; i < warmup_iters; i++) {
-        hipMemset(d_c, 0, M*N*sizeof(float));
+        hipMemset(d_c, 0, M*N*sizeof(bf16));
         matmul_device<M, N, K><<<threadblocks, threads_per_block>>>(A, B, C);
         HipCheckError();
         hipDeviceSynchronize();
@@ -420,7 +442,7 @@ TimingResult matmul_host(const std::vector<fp8e4m3>& a, const std::vector<fp8e4m
     std::vector<float> times_ms;
     times_ms.reserve(timing_iters);
     for (int r = 0; r < timing_iters; ++r) {
-        hipMemset(d_c, 0, M*N*sizeof(float));
+        hipMemset(d_c, 0, M*N*sizeof(bf16));
         hipEventRecord(start_event, 0);
         matmul_device<M, N, K><<<threadblocks, threads_per_block>>>(A, B, C);
         hipEventRecord(stop_event, 0);
@@ -450,7 +472,7 @@ TimingResult matmul_host(const std::vector<fp8e4m3>& a, const std::vector<fp8e4m
     HipCheckError();
     
     // Copy result back to host
-    hipMemcpy(c.data(), d_c, M*N*sizeof(float), hipMemcpyDeviceToHost);
+    hipMemcpy(c.data(), d_c, M*N*sizeof(bf16), hipMemcpyDeviceToHost);
     HipCheckError();
     
     // Free device memory
@@ -518,8 +540,8 @@ int main() {
     constexpr int warmup_iters = 2;
     constexpr int timing_iters = 1;
     #else
-    constexpr int warmup_iters = 3;
-    constexpr int timing_iters = 20;
+    constexpr int warmup_iters = 200;
+    constexpr int timing_iters = 1000;
     #endif
 
     printf("Matrix dimensions: %dx%dx%d, CUs: %d\n", M, N, K, CUs);
@@ -529,7 +551,7 @@ int main() {
     std::vector<fp8e4m3> a_host(M*K);
     std::vector<fp8e4m3> b_host(N*K);
     std::vector<float> c_ref(M*N);
-    std::vector<float> c_host(M*N);
+    std::vector<bf16> c_host(M*N);
 
     // Test with random matrices now that the kernel works
     random_init<M, N, K>(a_host, b_host);
@@ -554,10 +576,10 @@ int main() {
         for (int col = 0; col < N; ++col) {
             // c_host is row major: [row*N + col]
             // c_ref is row major: [row*N + col]
-            float c_val = c_host[row * N + col];
-            float c_ref_val = c_ref[row * N + col];
+            float c_val = float(c_host[row * N + col]);
+            float c_ref_val = float(c_ref[row * N + col]);
             float diff = std::abs(c_val - c_ref_val);
-            if (diff > 0.4f) {
+            if (diff > 1.f) {
                 printf("Mismatch at (row=%d, col=%d): c_host = %f, c_ref = %f, diff = %f\n", row, col, c_val, c_ref_val, diff);
                 success = false;
                 break;
