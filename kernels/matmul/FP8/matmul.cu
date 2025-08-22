@@ -321,8 +321,15 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
     constexpr int total_blocks_needed = blocks_row * blocks_col;
     constexpr int k_iters = K / BLOCK_K; // K iterations
 
-    __shared__ st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K> As[2];
-    __shared__ st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K> Bs[2];
+    using ST_A = st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>;
+    using ST_B = st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>;
+
+    using GL_A = kittens::gl<fp8e4m3, 1, 1, M, K>;
+    using GL_B = kittens::gl<fp8e4m3, 1, 1, N, K>;
+    using GL_C = kittens::gl<bf16, 1, 1, M, N>;
+
+    __shared__ ST_A As[2];
+    __shared__ ST_B Bs[2];
 
     rt_fp8e4m3<BLOCK_SIZE_ROW / WARPS_ROW, k_step> a;
     rt_fp8e4m3<BLOCK_SIZE_COL / WARPS_COL, k_step> b;
@@ -366,8 +373,8 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
 
     int curr = 0, next = 1;
 
-    load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(As[curr], A, {0, 0, block_row, 0});
-    load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(Bs[curr], B, {0, 0, block_col, 0});
+    load<2, false, kittens::ducks::rt_layout::row, ST_A, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<ST_A>, NUM_WARPS*WARP_THREADS>(As[curr], A, {0, 0, block_row, 0});
+    load<2, false, kittens::ducks::rt_layout::row, ST_B, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<ST_B>, NUM_WARPS*WARP_THREADS>(Bs[curr], B, {0, 0, block_col, 0});
 
     zero(c);
 
@@ -375,7 +382,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
     __builtin_amdgcn_s_barrier();
     __builtin_amdgcn_sched_barrier(0);
 
-    load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(As[next], A, {0, 0, block_row, 1});
+    load<2, false, kittens::ducks::rt_layout::row, ST_A, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<ST_A>, NUM_WARPS*WARP_THREADS>(As[next], A, {0, 0, block_row, 1});
     
     // Load persistent register tiles for first iteration
     auto as_subtile = kittens::subtile_inplace<BLOCK_SIZE_ROW / WARPS_ROW, k_step>(As[curr], {warp_m, 0});
@@ -383,7 +390,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
     auto bs_subtile = kittens::subtile_inplace<BLOCK_SIZE_COL / WARPS_COL, k_step>(Bs[curr], {warp_n, 0});
     load(b, bs_subtile);
 
-    load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(Bs[next], B, {0, 0, block_col, 1});
+    load<2, false, kittens::ducks::rt_layout::row, ST_B, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<ST_B>, NUM_WARPS*WARP_THREADS>(Bs[next], B, {0, 0, block_col, 1});
 
     __builtin_amdgcn_s_waitcnt(0);
     __builtin_amdgcn_s_barrier();
@@ -391,18 +398,75 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
 
     // Manual unroll by 2 iterations with register persistence (k_iters is even)
     for (int k = 0; k < k_iters - 2; k += 2) {
-        
+        using T = fp8e4m3;
         // === ITERATION k ===
         // Load shared memory for k+2 while computing k
-        load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(As[curr], A, {0, 0, block_row, k + 2});
+        // load<2, false,
+        //      kittens::ducks::rt_layout::row, ST_A, kittens::gl<fp8e4m3, 1, 1, M, K>,
+        //      coord<ST_A>,
+        //      NUM_WARPS*WARP_THREADS>
+        //        (As[curr], A, {0, 0, block_row, k + 2});
+        const ST_A& dst = As[curr];
+        const GL_A& src = A;
+        const coord<ST_A>& idx = {0, 0, block_row, k + 2};
+        constexpr int N_THREADS = NUM_WARPS*WARP_THREADS;
+
+        constexpr int memcpy_per_tile =  ST_A::rows * ST_A::cols * sizeof(fp8e4m3) / (16 * N_THREADS); // 32
+        static_assert(memcpy_per_tile > 0, "memcpy_per_tile must be greater than 0. Please decrease the number of threads.");
+        constexpr int elem_per_thread = 16 / sizeof(fp8e4m3); // 16
+        constexpr int elem_per_warp = elem_per_thread * kittens::WARP_THREADS; // 1024
+        const int laneid = kittens::laneid();
+        const int warp_id = warpid();
+        const int row_stride = src.template stride<2>();
+
+        constexpr int num_warps = NUM_WARPS;
+        constexpr int num_register_subtiles = kittens::TILE_ROW_DIM<T> * kittens::TILE_COL_DIM<T> / elem_per_warp;
+        constexpr int num_register_tiles_per_row = ST_A::cols / kittens::TILE_COL_DIM<T>;
+
+        coord<> unit_coord = idx.template unit_coord<2, 3>();
+        T* global_ptr = (T*)&src[unit_coord];
+        i32x4 srsrc = make_srsrc(global_ptr, row_stride * ST_A::rows * sizeof(T));
+
+        const T* lds_base = &dst.data[0] + (warp_id * elem_per_warp);
+
+        #pragma unroll
+        for (int i = 0; i < memcpy_per_tile; i++) {
+            const int register_tile_id = (warp_id + i * num_warps) / num_register_subtiles;
+            const int register_subtile_id = (warp_id + i * num_warps) % num_register_subtiles;
+
+            const int register_subtile_cols = kittens::TILE_COL_DIM<T> / num_register_subtiles;
+            const int num_register_subtiles_per_row = num_register_tiles_per_row * num_register_subtiles;
+            const int warp_col_offset = ((register_tile_id % num_register_tiles_per_row) * num_register_subtiles + register_subtile_id) * register_subtile_cols;
+            const int warp_row_offset = (register_tile_id / num_register_tiles_per_row) * kittens::TILE_ROW_DIM<T>;
+
+            int col_offset = warp_col_offset + (laneid / kittens::TILE_ROW_DIM<T>) * elem_per_thread;
+            int row_offset = warp_row_offset + (laneid % kittens::TILE_ROW_DIM<T>);
+
+            const int offset_in_global = (row_offset * row_stride + col_offset) * sizeof(T);
+
+            const T* lds_elem_ptr = lds_base + (i * N_THREADS * elem_per_thread);
+            uintptr_t lds_addr = reinterpret_cast<uintptr_t>(lds_elem_ptr);
+            as3_uint32_ptr lds_ptr = (as3_uint32_ptr)(lds_addr);
+
+            llvm_amdgcn_raw_buffer_load_lds(
+                srsrc, // buffer resource
+                lds_ptr,
+                16, // 16 bytes
+                offset_in_global,
+                0, 
+                0, // instruction offset
+                static_cast<index_t>(coherency::cache_all)); // cache coherency
+        }
+
+        load<2, false, kittens::ducks::rt_layout::row, ST_B, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<ST_B>, NUM_WARPS*WARP_THREADS>(Bs[curr], B, {0, 0, block_col, k + 2});
+
+// end global to shared
         auto as_subtile_temp = kittens::subtile_inplace<BLOCK_SIZE_ROW / WARPS_ROW, k_step>(As[next], {warp_m, 0});
         load(a_temp, as_subtile_temp);
         // this is doing the kth mma
         mma_ABt(c, a, b, c);
         auto bs_subtile_temp = kittens::subtile_inplace<BLOCK_SIZE_COL / WARPS_COL, k_step>(Bs[next], {warp_n, 0});
         load(b_temp, bs_subtile_temp);
-
-        load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(Bs[curr], B, {0, 0, block_col, k + 2});
 
         curr ^= 1; next ^= 1;
 
@@ -412,8 +476,8 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
 
         // === ITERATION k+1 ===  
         // Load shared memory for k+2 while computing k+1 (no conditionals - always load)
-        load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<st<fp8e4m3, BLOCK_SIZE_ROW, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(As[curr], A, {0, 0, block_row, k + 3});
-        load<2, false, kittens::ducks::rt_layout::row, st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<st<fp8e4m3, BLOCK_SIZE_COL, BLOCK_K>>, NUM_WARPS*WARP_THREADS>(Bs[curr], B, {0, 0, block_col, k + 3});
+        load<2, false, kittens::ducks::rt_layout::row, ST_A, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<ST_A>, NUM_WARPS*WARP_THREADS>(As[curr], A, {0, 0, block_row, k + 3});
+        load<2, false, kittens::ducks::rt_layout::row, ST_B, kittens::gl<fp8e4m3, 1, 1, N, K>, coord<ST_B>, NUM_WARPS*WARP_THREADS>(Bs[curr], B, {0, 0, block_col, k + 3});
 
         mma_ABt(c, a_temp, b_temp, c);
 
