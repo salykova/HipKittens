@@ -87,9 +87,9 @@ def simple_flash_backward(Q, K, V, dO, m, l):
 
 
 causal = False
-b = 1
-h = 1
-n = 32
+b = 16
+h = 16
+n = 1024
 d = 128
 dtype = torch.bfloat16
 mean = 10
@@ -236,52 +236,6 @@ dO_tk = dO_bhnd.float().clone()
 m_tk = m_tiled.float().unsqueeze(-1)
 l_tk = l_tiled.float().unsqueeze(-1)
 
-def test_dq(Q, K, V, dO, m, l):
-    """Simple version that should match PyTorch exactly"""
-    D = Q.shape[-1]
-    scale = 1.0 / math.sqrt(D)
-    # Recompute scores and probabilities with saved m, l
-    S = torch.matmul(Q, K.transpose(-2, -1)) * scale
-    P = torch.exp(S - m.unsqueeze(-1)) / l.unsqueeze(-1)
-    O = torch.matmul(P, V)
-    # # softmax backward
-    Delta = (dO * O).sum(dim=-1, keepdim=True)                 #
-    dS = P * (torch.matmul(dO, V.transpose(-2, -1)) - Delta)   # (B, N, H, N)
-    # chain rule through S = (Q K^T) * scale
-    dQ = torch.matmul(dS, K) * scale
-    return dQ
-
-def test_dv(Q, K, V, dO, m, l):
-    """Simple version that should match PyTorch exactly"""
-    D = Q.shape[-1]
-    scale = 1.0 / math.sqrt(D)
-    # Recompute scores and probabilities with saved m, l
-    S = torch.matmul(Q, K.transpose(-2, -1)) * scale
-    P = torch.exp(S - m.unsqueeze(-1)) / l.unsqueeze(-1)
-    O = torch.matmul(P, V)
-    # dV
-    dV = torch.matmul(P.transpose(-2, -1), dO)
-    return dV
-
-
-def test_dk(Q, K, V, dO, m, l):
-    """Simple version that should match PyTorch exactly"""
-    D = Q.shape[-1]
-    scale = 1.0 / math.sqrt(D)
-    # Recompute scores and probabilities with saved m, l
-    S = torch.matmul(Q, K.transpose(-2, -1)) * scale
-    P = torch.exp(S- m.unsqueeze(-1)) / l.unsqueeze(-1)
-    O = torch.matmul(P, V)
-    # softmax backward
-    Delta = (dO * O).sum(dim=-1, keepdim=True)                 # (B, N, H, 1)
-    dS = P * (torch.matmul(dO, V.transpose(-2, -1)) - Delta)   # (B, N, H, N)
-    dK = torch.matmul(dS.transpose(-2, -1), Q) * scale
-    return dK
-
-DQ = test_dq(Q_tiled.float(), K_tiled.float(), V_tiled.float(), dO_tiled.float(), m_tiled, l_tiled)
-DV = test_dv(Q_tiled.float(), K_tiled.float(), V_tiled.float(), dO_tiled.float(), m_tiled, l_tiled)
-DK = test_dk(Q_tiled.float(), K_tiled.float(), V_tiled.float(), dO_tiled.float(), m_tiled, l_tiled)
-
 # TK
 print("Running ThunderKittens ...")
 timings = []
@@ -289,7 +243,7 @@ for _ in range(num_warmup):
     dQ_tk = torch.zeros_like(q_grad_tiled_bhnd).float()
     dK_tk = torch.zeros_like(k_grad_tiled_bhnd).float()
     dV_tk = torch.zeros_like(v_grad_tiled_bhnd).float()
-    delta_tk = torch.zeros_like(delta_tiled).float()
+    delta_tk = torch.zeros_like(delta_tiled).float().transpose(-1, -2).contiguous()
 
     tk_kernel.dispatch_prep(
         O_tk,     # Og
@@ -316,6 +270,8 @@ for _ in range(num_iters):
     dQ_tk = torch.zeros_like(q_grad_tiled_bhnd).float()
     dK_tk = torch.zeros_like(k_grad_tiled_bhnd).float()
     dV_tk = torch.zeros_like(v_grad_tiled_bhnd).float()
+    # delta_tk = torch.zeros_like(delta_tiled).float()
+    delta_tk = torch.zeros_like(delta_tiled).float().transpose(-1, -2).contiguous()
     torch.cuda.synchronize()
     start_event.record()
 
@@ -343,6 +299,7 @@ for _ in range(num_iters):
     torch.cuda.synchronize()
     elapsed_time = start_event.elapsed_time(end_event)
     timings.append(elapsed_time)
+    delta_tk = delta_tk.transpose(-1, -2).contiguous()
 
 avg_time_tk = sum(timings) / len(timings)
 eff_tk = efficiency(flops_ref, avg_time_tk)
@@ -384,24 +341,17 @@ print(f"\nTK vs PyTorch comparison:")
 num_print = 8
 print("\nGradient K outputs:")
 print("TK: ", dK_tk[0, 0, 0, :num_print], "Max:", dK_tk.max().item())
-print("PyTorch: ", DK[0, 0, 0, :num_print], "Max:", DK.max().item())
-if use_aiter:
-    print("AITER: ", k_grad_aiter_bnhd[0, 0, 0, :num_print], "Max:", k_grad_aiter_bnhd.max().item())
+print("PyTorch: ", k_grad_pytorch[0, 0, 0, :num_print], "Max:", k_grad_pytorch.max().item())
 
 print()
 print("Gradient V outputs:")
 print("TK: ", dV_tk[0, 0, 0, :num_print], "Max:", dV_tk.max().item())
-print("PyTorch: ", DV[0, 0, 0, :num_print], "Max:", DV.max().item())
-if use_aiter:
-    print("AITER: ", v_grad_aiter_bnhd[0, 0, 0, :num_print], "Max:", v_grad_aiter_bnhd.max().item())
+print("PyTorch: ", v_grad_pytorch[0, 0, 0, :num_print], "Max:", v_grad_pytorch.max().item())
 
 print()
 print("Gradient Q outputs:")
 print("TK: ", dQ_tk[0, 0, 0, :num_print], "Max:", dQ_tk.max().item())
-print("PyTorch: ", DQ[0, 0, 0, :num_print], "Max:", DQ.max().item())
-if use_aiter:
-    print("AITER: ", q_grad_aiter_bnhd[0, 0, 0, :num_print], "Max:", q_grad_aiter_bnhd.max().item())
-
+print("PyTorch: ", q_grad_pytorch[0, 0, 0, :num_print], "Max:", q_grad_pytorch.max().item())
 
 # **************************************************
 # TK vs PyTorch (robust tolerances & metrics)
@@ -419,13 +369,13 @@ def robustness_check(ref, pred):
     rel_error = error_count / numel
     l2_error = (diff.pow(2).sum().sqrt() / ref.pow(2).sum().sqrt()).item()
     cos = torch.nn.functional.cosine_similarity(ref.flatten(), pred.flatten(), dim=0).item()
-    return diff, error_count, numel, rel_error, l2_error, cos   
+    return diff, error_count, numel, rel_error, l2_error, cos, mask   
 
 # Compute diffs in float32 to avoid bf16 quantization in the comparison itself
-delta_diff, delta_err_cnt, delta_total, delta_rel_error, delta_l2_error, delta_cos = robustness_check(delta_tiled, delta_tk)
-q_diff, q_err_cnt, q_total, q_rel_error, q_l2_error, q_cos = robustness_check(DQ, dQ_tk)
-k_diff, k_err_cnt, k_total, k_rel_error, k_l2_error, k_cos = robustness_check(DK, dK_tk)
-v_diff, v_err_cnt, v_total, v_rel_error, v_l2_error, v_cos = robustness_check(DV, dV_tk)
+delta_diff, delta_err_cnt, delta_total, delta_rel_error, delta_l2_error, delta_cos, delta_mask = robustness_check(delta_tiled, delta_tk)
+q_diff, q_err_cnt, q_total, q_rel_error, q_l2_error, q_cos, q_mask = robustness_check(q_grad_pytorch, dQ_tk)
+k_diff, k_err_cnt, k_total, k_rel_error, k_l2_error, k_cos, k_mask = robustness_check(k_grad_pytorch, dK_tk)
+v_diff, v_err_cnt, v_total, v_rel_error, v_l2_error, v_cos, v_mask = robustness_check(v_grad_pytorch, dV_tk)
 
 print(f"Delta: max_abs={delta_diff.max().item():.6f}, max_rel={delta_rel_error:.4f}, "
       f"rel_l2={delta_l2_error:.4f}, cos={delta_cos:.6f}, "

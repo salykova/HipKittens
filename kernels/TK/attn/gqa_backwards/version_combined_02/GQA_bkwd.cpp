@@ -1,9 +1,9 @@
 #include "kittens.cuh"
 #include "pyutils/pyutils.cuh"
 
-constexpr int ATTN_B = 1; // batch size
-constexpr int ATTN_H = 1; // number of heads
-constexpr int ATTN_N = 32; // sequence length
+constexpr int ATTN_B = 16; // batch size
+constexpr int ATTN_H = 16; // number of heads
+constexpr int ATTN_N = 1024; // sequence length
 constexpr int ATTN_D = 128; // dimension
 constexpr int BLOCK_SIZE = 32; // block size
 
@@ -20,7 +20,7 @@ template<int D, typename T=float, typename L=row_l> using attn_tile = rt<T, BLOC
 template<int D> struct attn_prep_globals { 
     gl<bf16, -1, -1, -1, -1> Og;
     gl<float, -1, -1, -1, -1> dOg; 
-    gl<float, -1, -1, -1, 1> delta;
+    gl<float, -1, -1, -1, -1> delta;
     dim3 grid() { return dim3(ATTN_B, ATTN_H, ATTN_N / BLOCK_SIZE); }
     dim3 block() { return dim3(NUM_THREADS); }
     size_t dynamic_shared_memory() { return MAX_SHARED_MEMORY-32000; }
@@ -41,7 +41,7 @@ __global__ void attend_prep_ker(const attn_prep_globals<D> g) {
     mul(dO, dO, O);
     attn_tile<D,float,row_l>::col_vec delta_vec;
     row_sum(delta_vec, dO); 
-    store(g.delta, delta_vec, {b,h,i,0});
+    store(g.delta, delta_vec, {b,h,0,i});
 }
 
 template<int D>
@@ -55,7 +55,7 @@ void dispatch_prep(attn_prep_globals<D> g) {
 template<int D> struct attn_bwd_combined_globals { 
     gl<bf16, -1, -1, -1, -1> Q, K, V, O;
     gl<float, -1, -1, -1, -1> dOg, dQg, dKg, dVg;
-    gl<float, -1, -1, -1, 1> m_vec, l_vec, delta_vec;
+    gl<float, -1, -1, -1, -1> m_vec, l_vec, delta_vec;
     dim3 grid() { return dim3(ATTN_B, ATTN_H, ATTN_N / BLOCK_SIZE); }
     dim3 block() { return dim3(NUM_THREADS); }
     size_t dynamic_shared_memory() { return MAX_SHARED_MEMORY-32000; }
@@ -66,13 +66,13 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
     
     const int b = blockIdx.x;
     const int h = blockIdx.y;
-    const int i = blockIdx.z;  // This is the block index we're processing
+    const int i = blockIdx.z;
 
     const float scale_factor = 1.0f / sqrt(D);
 
     // Register tiles
     qkvo_tile<D, bf16, row_l> qi_reg, ki_reg, vi_reg;
-    qkvo_tile<D, bf16, col_l> ki_reg_col, vi_reg_col;
+    qkvo_tile<D, bf16, col_l> ki_reg_col;
     qkvo_tile<D, float, row_l> dOi_reg, Oi_reg;
     qkvo_tile<D, float, accum_col_l> dQ_acc, dK_acc, dV_acc;
     
@@ -90,10 +90,12 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
     
     // Load statistics for block i
     typename attn_tile<D,float,accum_col_l>::col_vec mi_vec, li_vec;
-    load(mi_vec, g.m_vec, {b,h,i,0});
-    load(li_vec, g.l_vec, {b,h,i,0});
+    load(mi_vec, g.m_vec, {b,h,0,i});
+    load(li_vec, g.l_vec, {b,h,0,i});
     typename attn_tile<D,float,accum_col_l>::col_vec deltai_vec;
-    load(deltai_vec, g.delta_vec, {b,h,i,0});
+    load(deltai_vec, g.delta_vec, {b,h,0,i});
+    __builtin_amdgcn_s_waitcnt(0);
+    __builtin_amdgcn_s_barrier();
 
     // Convert layouts
     swap_layout(ki_reg_col, ki_reg);
@@ -110,6 +112,8 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
         load(vj_reg, g.V, {b,h,j,0});
         qkvo_tile<D, bf16, col_l> kj_reg_col;
         swap_layout(kj_reg_col, kj_reg);
+        __builtin_amdgcn_s_waitcnt(0);
+        __builtin_amdgcn_s_barrier();
 
         // S_ij = (Q_i K_j^T) * scale
         attn_tile<D,float,accum_col_l> S_ij; 
@@ -149,9 +153,9 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
         load(qj_reg,  g.Q,    {b,h,j,0});
         load(dOj_reg, g.dOg,  {b,h,j,0});
         load(Oj_reg,  g.O,    {b,h,j,0});
-        load(mj_vec,  g.m_vec, {b,h,j,0});
-        load(lj_vec,  g.l_vec, {b,h,j,0});
-        load(deltaj_vec, g.delta_vec, {b,h,j,0});
+        load(mj_vec,  g.m_vec, {b,h,0,j});
+        load(lj_vec,  g.l_vec, {b,h,0,j});
+        load(deltaj_vec, g.delta_vec, {b,h,0,j});
         
         // P_ji = exp(Q_j K_i^T * scale - m_j) / l_j
         attn_tile<D,float,accum_col_l> S_ji; 

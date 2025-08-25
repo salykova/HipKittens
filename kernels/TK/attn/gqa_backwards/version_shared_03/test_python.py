@@ -87,8 +87,8 @@ def simple_flash_backward(Q, K, V, dO, m, l):
 
 
 causal = False
-b = 1
-h = 1
+b = 16
+h = 16
 n = 1024
 d = 128
 dtype = torch.bfloat16
@@ -131,7 +131,7 @@ if use_aiter:
         K_aiter = K_bhnd.transpose(1, 2).contiguous().detach().requires_grad_(True)  
         V_aiter = V_bhnd.transpose(1, 2).contiguous().detach().requires_grad_(True)  
         dO_aiter = dO_bhnd.transpose(1, 2).contiguous()
-        out_aiter, softmax_lse = aiter.flash_attn_func(Q_aiter, K_aiter, V_aiter, causal, return_lse=True, deterministic=True)
+        out_aiter, softmax_lse = aiter.flash_attn_func(Q_aiter, K_aiter, V_aiter, causal, return_lse=True, deterministic=False)
         out_aiter.backward(dO_aiter)
     
     for _ in range(num_iters):
@@ -139,7 +139,7 @@ if use_aiter:
         K_aiter = K_bhnd.transpose(1, 2).contiguous().detach().requires_grad_(True)  
         V_aiter = V_bhnd.transpose(1, 2).contiguous().detach().requires_grad_(True)  
         dO_aiter = dO_bhnd.transpose(1, 2).contiguous()
-        out_aiter, softmax_lse = aiter.flash_attn_func(Q_aiter, K_aiter, V_aiter, causal, return_lse=True, deterministic=True)
+        out_aiter, softmax_lse = aiter.flash_attn_func(Q_aiter, K_aiter, V_aiter, causal, return_lse=True, deterministic=False)
         torch.cuda.synchronize()
         start_event.record()
         out_aiter.backward(dO_aiter)
@@ -150,8 +150,6 @@ if use_aiter:
 
     avg_time_aiter = sum(timings) / len(timings)
     eff_aiter = efficiency(flops_ref, avg_time_aiter)
-    print(f"AITER (AMD) reference average execution time: {avg_time_aiter:.4f} ms")
-    print(f"AITER (AMD) reference performance: {eff_aiter:.2f} TFLOPS for {b=} {h=} {n=} {d=} {causal=}.\n")
 
     q_grad_aiter_bnhd = Q_aiter.grad
     k_grad_aiter_bnhd = K_aiter.grad  
@@ -191,8 +189,6 @@ for _ in range(num_iters):
 
 avg_time_pytorch = sum(timings) / len(timings)
 eff_pytorch = efficiency(flops_ref, avg_time_pytorch)
-print(f"PyTorch reference average execution time: {avg_time_pytorch:.4f} ms")
-print(f"PyTorch reference performance: {eff_pytorch:.2f} TFLOPS for {b=} {h=} {n=} {d=} {causal=}.\n")
 
 q_grad_pytorch = q_pytorch.grad
 k_grad_pytorch = k_pytorch.grad
@@ -251,8 +247,6 @@ for _ in range(num_warmup):
         delta_tk, # delta
     )
 
-    # delta_tk = delta_tk.transpose(-1, -2).contiguous()
-
     tk_kernel.dispatch_bwd_combined(
         Q_tk,     
         K_tk,     
@@ -305,8 +299,6 @@ for _ in range(num_iters):
 
 avg_time_tk = sum(timings) / len(timings)
 eff_tk = efficiency(flops_ref, avg_time_tk)
-print(f"ThunderKittens average execution time: {avg_time_tk:.4f} ms")
-print(f"ThunderKittens performance: {eff_tk:.2f} TFLOPS for {b=} {h=} {n=} {d=} {causal=}.\n")
 
 # **************************************************
 # Comparisons
@@ -391,5 +383,17 @@ print(f"K grad: max_abs={k_diff.max().item():.6f}, max_rel={k_rel_error:.4f}, "
 print(f"V grad: max_abs={v_diff.max().item():.6f}, max_rel={v_rel_error:.4f}, "
       f"rel_l2={v_l2_error:.4f}, cos={v_cos:.6f}, "
       f"errors={v_err_cnt}/{v_total} ({100*v_err_cnt/v_total:.4f}%)")
+
+
+print(f"--------------------------------")
+if use_aiter:
+    print(f"AITER (AMD) reference average execution time: {avg_time_aiter:.4f} ms")
+    print(f"AITER (AMD) reference performance: {eff_aiter:.2f} TFLOPS for {b=} {h=} {n=} {d=} {causal=}.\n")
+
+print(f"PyTorch reference average execution time: {avg_time_pytorch:.4f} ms")
+print(f"PyTorch reference performance: {eff_pytorch:.2f} TFLOPS for {b=} {h=} {n=} {d=} {causal=}.\n")
+
+print(f"ThunderKittens average execution time: {avg_time_tk:.4f} ms")
+print(f"ThunderKittens performance: {eff_tk:.2f} TFLOPS for {b=} {h=} {n=} {d=} {causal=}.\n")
 
 
