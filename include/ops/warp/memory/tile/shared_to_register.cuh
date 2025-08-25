@@ -49,7 +49,7 @@ __device__ inline static void load(RT &dst, const ST &src) {
     const int tile_stride = subtile_stride * 2;
     const int row_stride = tile_stride * ST::underlying_width;
 
-    if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::row> || std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row>) {
+    if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::row>) {
         const int subtile_id = (laneid % 32) / 16;
         const int lane_col_byte_offset = (laneid / 32) * 16;
         const int lane_row_offset = (laneid % 16);
@@ -80,6 +80,36 @@ __device__ inline static void load(RT &dst, const ST &src) {
                     : "v"(next_addr), "i"(i * row_stride + j * tile_stride)
                     : "memory"
                 );
+            }
+        }
+    }
+    else if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row>) {
+        const int subtile_id = (laneid % 32) / 16;
+        const int lane_col_byte_offset = (laneid / 32) * 8;
+        const int lane_row_offset = (laneid % 16);
+
+        const int lane_byte_offset_base = lane_row_offset * kittens::TILE_COL_DIM<U> * sizeof(U) + lane_col_byte_offset;
+
+        const uint32_t addr_base = reinterpret_cast<uintptr_t>(&src.data[0]) + subtile_id * subtile_stride;
+        #pragma unroll
+        for(int k = 0; k < 4; k++) {
+            const int lane_byte_offset = lane_byte_offset_base + k * 16;
+            const int swizzled_lane_byte_offset = lane_byte_offset ^ ((lane_byte_offset >> 8) << 4);
+            const uint32_t addr = addr_base + swizzled_lane_byte_offset;
+
+            #pragma unroll
+            for(int i = 0; i < dst.height; i++) {
+        
+                #pragma unroll
+                for(int j = 0; j < dst.width; j++) {
+        
+                    asm volatile(
+                        "ds_read_b64 %0, %1 offset:%2\n"
+                        : "=v"(*reinterpret_cast<float2*>(&dst.tiles[i][j].data[k*2]))
+                        : "v"(addr), "i"(i * row_stride + j * tile_stride)
+                        : "memory"
+                    );
+                }
             }
         }
     }
@@ -201,7 +231,7 @@ __device__ inline static void store(ST &dst, const RT &src) {
     const int tile_stride = subtile_stride * 2;
     const int row_stride = tile_stride * ST::underlying_width;
 
-    if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::row> || std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row>) {
+    if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::row>) {
         const int subtile_id = (laneid % 32) / 16;
         const int lane_col_byte_offset = (laneid / 32) * 16;
         const int lane_row_offset = (laneid % 16);
@@ -262,6 +292,37 @@ __device__ inline static void store(ST &dst, const RT &src) {
                 next_dst_ptr[5] = tmp[6].y;
                 next_dst_ptr[6] = tmp[7].x;
                 next_dst_ptr[7] = tmp[7].y;
+            }
+        }
+    }
+    else if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row>) {
+        const int subtile_id = (laneid % 32) / 16;
+        const int lane_col_byte_offset = (laneid / 32) * 8;
+        const int lane_row_offset = (laneid % 16);
+
+        const int lane_byte_offset_base = lane_row_offset * kittens::TILE_COL_DIM<U> * sizeof(U) + lane_col_byte_offset;
+
+        #pragma unroll
+        for(int k = 0; k < 4; k++) {
+            const int lane_byte_offset = lane_byte_offset_base + k * 16;
+            const int swizzled_lane_byte_offset = lane_byte_offset ^ ((lane_byte_offset >> 8) << 4);
+            const int swizzled_lane_offset = swizzled_lane_byte_offset / sizeof(U);
+
+            #pragma unroll
+            for(int i = 0; i < dst.height; i++) {
+        
+                #pragma unroll
+                for(int j = 0; j < dst.width; j++) {
+                    U2 tmp[2];
+                    tmp[0] = base_types::convertor<U2, T2>::convert(src.tiles[i][j].data[k*2]);
+                    tmp[1] = base_types::convertor<U2, T2>::convert(src.tiles[i][j].data[k*2 + 1]);
+
+                    U* dst_ptr = &dst.data[i * row_stride + j * tile_stride + subtile_id * subtile_stride + swizzled_lane_offset];
+                    dst_ptr[0] = tmp[0].x;
+                    dst_ptr[1] = tmp[0].y;
+                    dst_ptr[2] = tmp[1].x;
+                    dst_ptr[3] = tmp[1].y;
+                }
             }
         }
     }

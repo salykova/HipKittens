@@ -101,10 +101,21 @@ __device__ inline void load(ST& dst, const GL& src, const COORD& idx)
             const int row_offset = warp_row_offset + get_accum_thread_row_offset(laneid / 4);
             offset_in_global = (row_offset * row_stride + col_offset) * sizeof(T);
         } else {
-            static_assert(std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_row>, "Unsupported layout");
+            const int register_subtile_rows = kittens::TILE_ROW_DIM<T> / num_register_subtiles;
+            const int num_register_subtiles_per_row = num_register_tiles_per_row;
+            const int warp_col_offset = (register_tile_id % num_register_subtiles_per_row) * kittens::TILE_COL_DIM<T>;
+            const int warp_row_offset = ((register_tile_id / num_register_subtiles_per_row) * num_register_subtiles + register_subtile_id) * register_subtile_rows;
+
+            const int lane_col_byte_offset = (laneid % 4) * bytes_per_thread;
+            const int lane_row_offset = ((laneid % kittens::WARP_THREADS) / 4);
+            const int swizzle = ((lane_row_offset * kittens::TILE_COL_DIM<T> * sizeof(T)) >> 8) << 4;
+
+            const int swizzled_lane_col_byte_offset = lane_col_byte_offset ^ swizzle;
+            offset_in_global = ((warp_row_offset + lane_row_offset) * row_stride + warp_col_offset) * sizeof(T) + swizzled_lane_col_byte_offset;
         }
 
         const T* lds_elem_ptr = lds_base + (i * N_THREADS * elem_per_thread);
+
         uintptr_t lds_addr = reinterpret_cast<uintptr_t>(lds_elem_ptr);
         as3_uint32_ptr lds_ptr = (as3_uint32_ptr)(lds_addr);
 
@@ -190,7 +201,19 @@ __device__ inline void prefill_swizzled_offsets(
             const int offset_in_global = (row_offset * row_stride + col_offset) * sizeof(T);
             swizzled_offsets[i] = offset_in_global;
         } else {
-            static_assert(std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_row>, "Unsupported layout");
+            const int register_subtile_rows = kittens::TILE_ROW_DIM<T> / num_register_subtiles;
+            const int num_register_subtiles_per_row = num_register_tiles_per_row;
+            const int warp_col_offset = (register_tile_id % num_register_subtiles_per_row) * kittens::TILE_COL_DIM<T>;
+            const int warp_row_offset = ((register_tile_id / num_register_subtiles_per_row) * num_register_subtiles + register_subtile_id) * register_subtile_rows;
+
+            const int lane_col_byte_offset = (laneid % 4) * bytes_per_thread;
+            const int lane_row_offset = ((laneid % kittens::WARP_THREADS) / 4);
+            const int swizzle = ((lane_row_offset * kittens::TILE_COL_DIM<T> * sizeof(T)) >> 8) << 4;
+
+            const int swizzled_lane_col_byte_offset = lane_col_byte_offset ^ swizzle;
+
+            const int offset_in_global = ((warp_row_offset + lane_row_offset) * row_stride + warp_col_offset) * sizeof(T) + swizzled_lane_col_byte_offset;
+            swizzled_offsets[i] = offset_in_global;
         }
     }
 }
@@ -390,7 +413,17 @@ __device__ static inline void store(const GL &dst, const ST &src, const COORD &i
 
             offset_in_global = (row_offset * row_stride + col_offset);
         } else {
-            static_assert(std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_row>, "Unsupported layout");
+            const int register_subtile_rows = kittens::TILE_ROW_DIM<T> / num_register_subtiles;
+            const int num_register_subtiles_per_row = num_register_tiles_per_row;
+            const int warp_col_offset = (register_tile_id % num_register_subtiles_per_row) * kittens::TILE_COL_DIM<T>;
+            const int warp_row_offset = ((register_tile_id / num_register_subtiles_per_row) * num_register_subtiles + register_subtile_id) * register_subtile_rows;
+
+            const int lane_col_byte_offset = (laneid % 4) * bytes_per_thread;
+            const int lane_row_offset = ((laneid % kittens::WARP_THREADS) / 4);
+            const int swizzle = ((lane_row_offset * kittens::TILE_COL_DIM<T> * sizeof(T)) >> 8) << 4;
+
+            const int swizzled_lane_col_byte_offset = lane_col_byte_offset ^ swizzle;
+            offset_in_global = ((warp_row_offset + lane_row_offset) * row_stride + warp_col_offset) + (swizzled_lane_col_byte_offset / sizeof(T));
         }
 
         const T* lds_elem_ptr = lds_base + (i * N_THREADS * elem_per_thread);

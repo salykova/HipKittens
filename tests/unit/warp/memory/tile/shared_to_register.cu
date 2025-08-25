@@ -42,7 +42,11 @@ void warp::memory::tile::shared_to_register::tests(test_data &results) {
 
     sweep_gmem_type_2d_warp<sharedreg_load_store, SIZE, SIZE, kittens::ducks::st_layout::row, kittens::ducks::rt_layout::row>::run(results);
     sweep_gmem_type_2d_warp<sharedreg_load_store, SIZE, SIZE, kittens::ducks::st_layout::col, kittens::ducks::rt_layout::col>::run(results);
+
+    #ifdef KITTENS_CDNA4
+    sweep_gmem_type_2d_warp<sharedreg_load_store, SIZE, SIZE, kittens::ducks::st_layout::accumulator_row, kittens::ducks::rt_layout::accumulator_row>::run(results);
     sweep_gmem_type_2d_warp<sharedreg_load_store, SIZE, SIZE, kittens::ducks::st_layout::accumulator_col, kittens::ducks::rt_layout::accumulator_col>::run(results);
+    #endif
 }
 
 #endif
