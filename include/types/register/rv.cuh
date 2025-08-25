@@ -93,7 +93,12 @@ concept all = requires {
 template<typename T> concept naive_layout = all<T> && std::is_same_v<typename T::layout, ducks::rv_layout::naive>;
 template<typename T> concept align_layout = all<T> && std::is_same_v<typename T::layout, ducks::rv_layout::align>;
 template<typename T> concept ortho_layout = all<T> && std::is_same_v<typename T::layout, ducks::rv_layout::ortho>;
+#ifdef KITTENS_CDNA4
+template<typename T> concept accum_align_layout = all<T> && std::is_same_v<typename T::layout, ducks::rv_layout::accum_align>;
+template<typename T> concept tile_layout = accum_align_layout<T> || align_layout<T> || ortho_layout<T>;
+#else
 template<typename T> concept tile_layout  = align_layout<T> || ortho_layout<T>; // vector layouts for interacting with tiles.
+#endif
 
 } // namespace rv
 } // namespace ducks

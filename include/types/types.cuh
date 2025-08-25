@@ -61,5 +61,8 @@ using accum_row_l = ducks::rt_layout::accumulator_row;
 using align_l = ducks::rv_layout::align;
 using ortho_l = ducks::rv_layout::ortho;
 using naive_l = ducks::rv_layout::naive;
+#ifdef KITTENS_CDNA4
+using accum_align_l = ducks::rv_layout::accum_align;
+#endif
 
 }

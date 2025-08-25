@@ -67,8 +67,12 @@ template<typename _T, ducks::rt_layout::all _layout> struct rt_base {
     static constexpr int registers_per_thread = packed_per_thread * sizeof(dtype) / 4; // 2 or 4, registers are 32-bit words
 
     #ifdef KITTENS_CDNA4
-    using row_vec_layout = std::conditional_t<std::is_same_v<layout, ducks::rt_layout::row> || std::is_same_v<layout, ducks::rt_layout::accumulator_row>, ducks::rv_layout::align, ducks::rv_layout::ortho>; // for holding column reductions
-    using col_vec_layout = std::conditional_t<std::is_same_v<layout, ducks::rt_layout::row> || std::is_same_v<layout, ducks::rt_layout::accumulator_row>, ducks::rv_layout::ortho, ducks::rv_layout::align>; // for holding row reductions
+    using row_vec_layout = std::conditional_t<std::is_same_v<layout, ducks::rt_layout::row> || std::is_same_v<layout, ducks::rt_layout::accumulator_row>, 
+                                              std::conditional_t<std::is_same_v<layout, ducks::rt_layout::accumulator_row>, ducks::rv_layout::accum_align, ducks::rv_layout::align>, 
+                                              ducks::rv_layout::ortho>; // for holding column reductions
+    using col_vec_layout = std::conditional_t<std::is_same_v<layout, ducks::rt_layout::row> || std::is_same_v<layout, ducks::rt_layout::accumulator_row>, 
+                                              ducks::rv_layout::ortho, 
+                                              std::conditional_t<std::is_same_v<layout, ducks::rt_layout::accumulator_col>, ducks::rv_layout::accum_align, ducks::rv_layout::align>>; // for holding row reductions
     #else
     using row_vec_layout = std::conditional_t<std::is_same_v<layout, ducks::rt_layout::row>, ducks::rv_layout::align, ducks::rv_layout::ortho>; // for holding column reductions
     using col_vec_layout = std::conditional_t<std::is_same_v<layout, ducks::rt_layout::row>, ducks::rv_layout::ortho, ducks::rv_layout::align>; // for holding row reductions
