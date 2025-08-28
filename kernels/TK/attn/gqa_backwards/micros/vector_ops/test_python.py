@@ -16,15 +16,15 @@ torch.manual_seed(0)
 b = 1
 h = 1
 n = 32
-d = 32
+d = 16
 
 # pytorch
 x_a = torch.randn((b, h, n, d), dtype=torch.bfloat16, device='cuda')
 x_b = torch.randn((b, h, n, d), dtype=torch.bfloat16, device='cuda')
-x_accum = torch.zeros((b, h, n, d), dtype=torch.float32, device='cuda')
+x_accum = torch.zeros((b, h, n, n), dtype=torch.float32, device='cuda')
 # y = x.sum(dim=-1, keepdim=True)
 y = torch.matmul(x_a, x_b.transpose(-2, -1)).float()
-# y = x_b
+# y = x_a
 
 # tk
 y_tk = torch.zeros_like(y).float()

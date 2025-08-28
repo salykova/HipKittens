@@ -5,7 +5,7 @@ using namespace kittens;
 constexpr int b = 1;
 constexpr int h = 1;
 constexpr int n = 32;
-constexpr int d = 32;
+constexpr int d = 16;
 
 #define NUM_WARPS 1
 #define NUM_THREADS (kittens::WARP_THREADS * NUM_WARPS)
@@ -27,21 +27,29 @@ void micro_tk(const micro_globals g) {
     load(a_tile, g.in_a, {0, 0, 0, 0});
     load(b_tile, g.in_b, {0, 0, 0, 0});
     load(tile_accum, g.in_accum, {0, 0, 0, 0});
+    __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_waitcnt(0);
+    __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
+    __builtin_amdgcn_sched_barrier(0);
     __syncthreads();
 
 
     mma_ABt(tile_accum, a_tile, b_tile, tile_accum);
+    __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_waitcnt(0);
+    __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
+    __builtin_amdgcn_sched_barrier(0);
     __syncthreads();
 
     
     store(g.out, tile_accum, {0, 0, 0, 0});
-    
+    __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_waitcnt(0);
+    __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
+    __builtin_amdgcn_sched_barrier(0);
     __syncthreads();
 }
 
