@@ -30,11 +30,7 @@ template<ducks::rt::all RT, ducks::st::all ST>
 __device__ inline static void load(RT &dst, const ST &src) {
 
     static_assert(RT::height == ST::height, "register tile and shared tile must match height");
-    static_assert(RT::width  == ST::width,  "register tile and shared tile must match width");
-    static_assert((std::is_same_v<typename RT::layout, ducks::rt_layout::row> && std::is_same_v<typename ST::layout, ducks::st_layout::row>) 
-    || (std::is_same_v<typename RT::layout, ducks::rt_layout::col> && std::is_same_v<typename ST::layout, ducks::st_layout::col>)
-    || (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_col> && std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_col>
-    || (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row> && std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_row>)), "register tile and shared tile layout must match");
+    static_assert(RT::width == ST::width,  "register tile and shared tile must match width");
 
     // TODO: add support for fp8
     using T2 = RT::dtype;
@@ -45,103 +41,73 @@ __device__ inline static void load(RT &dst, const ST &src) {
 
     const int laneid = kittens::laneid() % kittens::WARP_THREADS;
 
-    const int subtile_stride = kittens::TILE_ROW_DIM<U> * kittens::TILE_COL_DIM<U> * sizeof(U) / 2;
-    const int tile_stride = subtile_stride * 2;
+    const int tile_stride = ST::underlying_tile_rows * ST::underlying_tile_cols * sizeof(U);
     const int row_stride = tile_stride * ST::underlying_width;
 
-    if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::row>) {
-        const int subtile_id = (laneid % 32) / 16;
-        const int lane_col_byte_offset = (laneid / 32) * 16;
-        const int lane_row_offset = (laneid % 16);
+    if constexpr (std::is_same_v<typename ST::matrix_layout, ducks::st_matrix::mfma_16x16x32>) {
+        if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::row>) {
 
-        const int lane_byte_offset = lane_row_offset * kittens::TILE_COL_DIM<U> * sizeof(U) + lane_col_byte_offset;
-        const int next_lane_byte_offset = lane_byte_offset + 32;
-        const int swizzled_lane_byte_offset = lane_byte_offset ^ ((lane_byte_offset >> 8) << 4);
-        const int swizzled_next_lane_byte_offset = next_lane_byte_offset ^ ((next_lane_byte_offset >> 8) << 4);
+            static_assert(std::is_same_v<typename RT::matrix_layout, ducks::rt_matrix::mfma_16x16x32>, "register tile needs to be mfma_16x16x32 for row layout");
 
-        const uint32_t addr = reinterpret_cast<uintptr_t>(&src.data[0]) + subtile_id * subtile_stride + swizzled_lane_byte_offset;
-        const uint32_t next_addr = reinterpret_cast<uintptr_t>(&src.data[0]) + subtile_id * subtile_stride + swizzled_next_lane_byte_offset;
-        #pragma unroll
-        for(int i = 0; i < dst.height; i++) {
+            const int lane_col_offset = (laneid / 16) * 8;
+            const int lane_row_offset = (laneid % 16);
     
-           #pragma unroll
-           for(int j = 0; j < dst.width; j++) {
-    
-                asm volatile(
-                    "ds_read_b128 %0, %1 offset:%2\n"
-                    : "=v"(*reinterpret_cast<float4*>(&dst.tiles[i][j].data[0]))
-                    : "v"(addr), "i"(i * row_stride + j * tile_stride)
-                    : "memory"
-                );
-
-                asm volatile(
-                    "ds_read_b128 %0, %1 offset:%2\n"
-                    : "=v"(*reinterpret_cast<float4*>(&dst.tiles[i][j].data[4]))
-                    : "v"(next_addr), "i"(i * row_stride + j * tile_stride)
-                    : "memory"
-                );
-            }
-        }
-    }
-    else if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row>) {
-        const int subtile_id = (laneid % 32) / 16;
-        const int lane_col_byte_offset = (laneid / 32) * 8;
-        const int lane_row_offset = (laneid % 16);
-
-        const int lane_byte_offset_base = lane_row_offset * kittens::TILE_COL_DIM<U> * sizeof(U) + lane_col_byte_offset;
-
-        const uint32_t addr_base = reinterpret_cast<uintptr_t>(&src.data[0]) + subtile_id * subtile_stride;
-        #pragma unroll
-        for(int k = 0; k < 4; k++) {
-            const int lane_byte_offset = lane_byte_offset_base + k * 16;
+            const int lane_byte_offset = (lane_row_offset * ST::underlying_tile_cols + lane_col_offset) * sizeof(U);
             const int swizzled_lane_byte_offset = lane_byte_offset ^ ((lane_byte_offset >> 8) << 4);
-            const uint32_t addr = addr_base + swizzled_lane_byte_offset;
-
+    
+            const uint32_t addr = reinterpret_cast<uintptr_t>(&src.data[0]) + swizzled_lane_byte_offset;
             #pragma unroll
             for(int i = 0; i < dst.height; i++) {
         
-                #pragma unroll
-                for(int j = 0; j < dst.width; j++) {
+               #pragma unroll
+               for(int j = 0; j < dst.width; j++) {
         
                     asm volatile(
-                        "ds_read_b64 %0, %1 offset:%2\n"
-                        : "=v"(*reinterpret_cast<float2*>(&dst.tiles[i][j].data[k*2]))
+                        "ds_read_b128 %0, %1 offset:%2\n"
+                        : "=v"(*reinterpret_cast<float4*>(&dst.tiles[i][j].data[0]))
                         : "v"(addr), "i"(i * row_stride + j * tile_stride)
                         : "memory"
                     );
                 }
             }
         }
-    }
-    else if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::col> || std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_col>) {
-        const int row_offset = (laneid % 16) / 4 + (laneid / 32) * 8;
-        const int col_offset = ((laneid % 4) * 4) + 16*((laneid % 32)/16);
-        const int subtile_offset = row_offset * kittens::TILE_ROW_DIM<U> + col_offset;
-        const uint32_t addr = reinterpret_cast<uintptr_t>(&src.data[subtile_offset]);
+        else if constexpr (std::is_same_v<typename RT::layout, ducks::rt_layout::col>) {
 
-        #pragma unroll
-        for(int i = 0; i < dst.height; i++) {
+            static_assert(std::is_same_v<typename RT::matrix_layout, ducks::rt_matrix::mfma_32x32x16>, "register tile needs to be mfma_32x32x16 for col layout");
+            const int row_offset = (laneid % 16) / 4 + (laneid / 32) * 8;
+            const int col_offset = ((laneid % 4) * 4) + 16*((laneid % 32)/16);
+            const int lane_byte_offset = (row_offset * ST::underlying_tile_cols + col_offset) * sizeof(U);
+            const int swizzled_lane_byte_offset = lane_byte_offset ^ ((lane_byte_offset >> 8) << 4);
+
+            const int next_row_offset = row_offset + 4;
+            const int next_lane_byte_offset = (next_row_offset * ST::underlying_tile_cols + col_offset) * sizeof(U);
+            const int swizzled_next_lane_byte_offset = next_lane_byte_offset ^ ((next_lane_byte_offset >> 8) << 4);
+
+            const uint32_t addr = reinterpret_cast<uintptr_t>(&src.data[0]) + swizzled_lane_byte_offset;
+            const uint32_t next_addr = reinterpret_cast<uintptr_t>(&src.data[0]) + swizzled_next_lane_byte_offset;
     
-           #pragma unroll
-           for(int j = 0; j < dst.width; j++) {
-                #pragma unroll 
-                for (int k = 0; k < 2; k++) {
-                        asm volatile(
-                            "ds_read_b64_tr_b16 %0, %2 offset:%3\n"
-                            "ds_read_b64_tr_b16 %1, %2 offset:%4\n"
-                            : "=v"(*reinterpret_cast<float2*>(&dst.tiles[i][j].data[k*4])), 
-                            "=v"(*reinterpret_cast<float2*>(&dst.tiles[i][j].data[k*4 + 2]))
-                            : "v"(addr),
-                            "i"(i * row_stride + j * tile_stride + k * subtile_stride),
-                            "i"(i * row_stride + j * tile_stride + k * subtile_stride + (4 * kittens::TILE_ROW_DIM<U> * sizeof(U)))
-                            : "memory"
-                        );  
+            #pragma unroll
+            for(int i = 0; i < dst.height; i++) {
+               #pragma unroll
+               for(int j = 0; j < dst.width; j++) {
+                    asm volatile(
+                        "ds_read_b64_tr_b16 %0, %2 offset:%4\n"
+                        "ds_read_b64_tr_b16 %1, %3 offset:%4\n"
+                        : "=v"(*reinterpret_cast<float2*>(&dst.tiles[i][j].data[0])), 
+                        "=v"(*reinterpret_cast<float2*>(&dst.tiles[i][j].data[2]))
+                        : "v"(addr), "v"(next_addr),
+                        "i"(i * row_stride + j * tile_stride)
+                        : "memory"
+                    ); 
                 }
             }
+        } else {
+            static_assert(false, "Unsupported layout");
         }
     } else {
-        static_assert(std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_col>, "Unsupported layout");
+        static_assert(false, "Unsupported matrix shape");
     }
+
 }
 #else
 template<ducks::rt::all RT, ducks::st::all ST>
@@ -214,10 +180,6 @@ __device__ inline static void store(ST &dst, const RT &src) {
 
     static_assert(RT::height == ST::height, "register tile and shared tile must match height");
     static_assert(RT::width  == ST::width,  "register tile and shared tile must match width");
-    static_assert((std::is_same_v<typename RT::layout, ducks::rt_layout::row> && std::is_same_v<typename ST::layout, ducks::st_layout::row>) 
-    || (std::is_same_v<typename RT::layout, ducks::rt_layout::col> && std::is_same_v<typename ST::layout, ducks::st_layout::col>)
-    || (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_col> && std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_col>
-    || (std::is_same_v<typename RT::layout, ducks::rt_layout::accumulator_row> && std::is_same_v<typename ST::layout, ducks::st_layout::accumulator_row>)), "register tile and shared tile layout must match");
 
     using T2 = RT::dtype;
     using T  = base_types::packing<T2>::unpacked_type;

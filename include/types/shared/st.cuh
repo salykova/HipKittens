@@ -10,7 +10,7 @@
 
 
 #ifdef KITTENS_CDNA4
-#include "st_layout.cuh"
+#include "st_matrix.cuh"
 /* ----------  MAIN TILE STRUCT  ---------- */
 
 // these are helper structs for type inference
@@ -38,7 +38,7 @@ template<
     typename ST,
     int _subtile_height,
     int _subtile_width,
-    ducks::st_layout::all _layout=ducks::st_layout::row
+    ducks::st_matrix::all _matrix=ducks::st_matrix::mfma_32x32x16
 >
 struct st_subtile;
 
@@ -49,27 +49,30 @@ struct st_subtile;
  * @tparam _rows The height of the tile.
  * @tparam _cols The width of the tile.
  */
-template<typename _T, int _rows, int _cols, ducks::st_layout::all _layout=ducks::st_layout::row>
+template<typename _T, int _rows, int _cols, ducks::st_matrix::all _matrix=ducks::st_matrix::mfma_32x32x16>
 struct KITTENS_DEFAULT_ALIGN st {
     using identifier = ducks::st::identifier; ///< Type identifier for shared memory tile.
-    using layout = _layout; ///< Layout of the matrix tile.
+    using matrix_layout = _matrix; ///< Layout of the matrix tile.
     using T = base_types::packing<_T>::unpacked_type;
     using T2 = base_types::packing<_T>::packed_type;
     using dtype = T; ///< Data type of the elements in the tile.
 
     // define underlying data as same as that projected, to make clear that this is *not* a subtile.
+    static constexpr int underlying_tile_rows = matrix_layout::tile_size_row_in;
+    static constexpr int underlying_tile_cols = matrix_layout::tile_size_col_in;
+
     static constexpr int underlying_rows          = _rows;
     static constexpr int underlying_cols          = _cols;
-    static constexpr int underlying_height        = _rows / kittens::TILE_ROW_DIM<T>;
-    static constexpr int underlying_width         = _cols / kittens::TILE_COL_DIM<T>;
+    static constexpr int underlying_height        = _rows / underlying_tile_rows;
+    static constexpr int underlying_width         = _cols / underlying_tile_cols;
     static constexpr int underlying_num_elements  = underlying_rows * underlying_cols;
 
     static constexpr int rows                = _rows; ///< Total number of rows in the tile.
-    static_assert(rows % kittens::TILE_ROW_DIM<T> == 0, "Rows must be divisible by the tile dimension");
+    static_assert(rows % underlying_tile_rows == 0, "Rows must be divisible by the tile dimension");
     static constexpr int cols                = _cols; ///< Total number of cols in the tile.
-    static_assert(cols % kittens::TILE_COL_DIM<T> == 0, "Cols must be divisible by the tile dimension");
-    static constexpr int height              = _rows / kittens::TILE_ROW_DIM<T>; ///< Height of the tile in terms of 16-element subtiles.
-    static constexpr int width               = _cols / kittens::TILE_COL_DIM<T>; ///< Width of the tile in terms of 16-element subtiles.
+    static_assert(cols % underlying_tile_cols == 0, "Cols must be divisible by the tile dimension");
+    static constexpr int height              = _rows / underlying_tile_rows; ///< Height of the tile in terms of 16-element subtiles.
+    static constexpr int width               = _cols / underlying_tile_cols; ///< Width of the tile in terms of 16-element subtiles.
     static constexpr int num_elements        = rows * cols; ///< Total number of elements in the tile.
 
     static_assert(base_types::packing<dtype>::num() == 1); // must be a 1-packed type (e.g. float, bf16, etc)
@@ -80,7 +83,7 @@ struct KITTENS_DEFAULT_ALIGN st {
     using col_vec = sv<dtype, rows>; ///< Column vector type for this tile
     using row_vec = sv<dtype, cols>; ///< Row vector type for this tile
     template<int subtile_rows, int subtile_cols> using subtile = st_subtile<
-        st<T, rows, cols, _layout>, subtile_rows, subtile_cols, _layout
+        st<T, rows, cols, _matrix>, subtile_rows, subtile_cols, _matrix
     >; ///< A templated subtile type wrapper for this tile.
 };
 
@@ -99,35 +102,34 @@ template<
     typename _ST,
     int _subtile_rows,
     int _subtile_cols,
-    ducks::st_layout::all _layout
+    ducks::st_matrix::all _matrix
 >
 struct st_subtile {
     using identifier = ducks::st::identifier; // i quack like an st, gcc will never know the difference
-    using layout = _layout; ///< Layout of the matrix tile.
+    using matrix_layout = _matrix; ///< Layout of the matrix tile.
     using ST = _ST;
     using T = ST::T;
     using T2 = ST::T2;
     using dtype = T; ///< Data type of the elements in the tile.
 
+    static constexpr int underlying_tile_rows     = ST::underlying_tile_rows;
+    static constexpr int underlying_tile_cols     = ST::underlying_tile_cols;
     static constexpr int underlying_rows          = ST::underlying_rows;
-    static_assert(underlying_rows % kittens::TILE_ROW_DIM<T> == 0, "Underlying rows must be divisible by the tile dimension");
+    static_assert(underlying_rows % underlying_tile_rows == 0, "Underlying rows must be divisible by the tile dimension");
     static constexpr int underlying_cols          = ST::underlying_cols;
-    static_assert(underlying_cols % kittens::TILE_COL_DIM<T> == 0, "Underlying cols must be divisible by the tile dimension");
+    static_assert(underlying_cols % underlying_tile_cols == 0, "Underlying cols must be divisible by the tile dimension");
     static constexpr int underlying_height        = ST::underlying_height;
     static constexpr int underlying_width         = ST::underlying_width;
     static constexpr int underlying_num_elements  = ST::underlying_num_elements;
 
     static constexpr int rows                = _subtile_rows;
-    static_assert(rows % kittens::TILE_ROW_DIM<T> == 0, "Rows must be divisible by the tile dimension");
+    static_assert(rows % underlying_tile_rows == 0, "Rows must be divisible by the tile dimension");
     static constexpr int cols                = _subtile_cols;
-    static_assert(cols % kittens::TILE_COL_DIM<T> == 0, "Cols must be divisible by the tile dimension");
-    static constexpr int height              = rows / kittens::TILE_ROW_DIM<T>;
-    static constexpr int width               = cols / kittens::TILE_COL_DIM<T>;
+    static_assert(cols % underlying_tile_cols == 0, "Cols must be divisible by the tile dimension");
+    static constexpr int height              = rows / underlying_tile_rows;
+    static constexpr int width               = cols / underlying_tile_cols;
     static constexpr int num_elements        = rows * cols;
 
-    static constexpr int swizzle_bytes = ST::swizzle_bytes;
-    static constexpr int swizzle_repeat = ST::swizzle_repeat;
-    static constexpr int subtile_cols   = ST::subtile_cols;
     dtype *data;
     int row_offset, col_offset;
 
@@ -167,9 +169,9 @@ template<typename T> concept all = requires {
 
 /* ----------  WRAPPERS FOR PRETTINESS  ---------- */
 
-template<int _height, int _width, ducks::st_layout::all layout=ducks::st_layout::row> using st_bf = st<bf16,  _height, _width, layout>;
-template<int _height, int _width, ducks::st_layout::all layout=ducks::st_layout::row> using st_hf = st<half,  _height, _width, layout>;
-template<int _height, int _width, ducks::st_layout::all layout=ducks::st_layout::row> using st_fl = st<float, _height, _width, layout>;
+template<int _height, int _width, ducks::st_matrix::all matrix=ducks::st_matrix::mfma_32x32x16> using st_bf = st<bf16,  _height, _width, matrix>;
+template<int _height, int _width, ducks::st_matrix::all matrix=ducks::st_matrix::mfma_32x32x16> using st_hf = st<half,  _height, _width, matrix>;
+template<int _height, int _width, ducks::st_matrix::all matrix=ducks::st_matrix::mfma_32x32x16> using st_fl = st<float, _height, _width, matrix>;
 }
 #else
 /* ----------  MAIN TILE STRUCT  ---------- */

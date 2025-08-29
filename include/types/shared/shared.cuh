@@ -6,7 +6,7 @@
 #pragma once
 
 #ifdef KITTENS_CDNA4
-#include "st_layout.cuh"
+#include "st_matrix.cuh"
 #endif
 
 #include "sv.cuh"
