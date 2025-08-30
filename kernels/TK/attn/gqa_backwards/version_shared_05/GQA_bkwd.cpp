@@ -97,11 +97,11 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
         qo_tile<D, bf16, row_l, mfma_16x16x32> Q_i;
         qo_tile<D, bf16, col_l, mfma_32x32x16> dO_i;
         attn_tile<D, float, accum_col_l, mfma_16x16x32>::col_vec l_i, m_i, delta_i;
-        load(Q_i, g.Q, {batch_idx, head_idx, i * NUM_WARPS + warpid, 0});
-        load(dO_i, g.dOg, {batch_idx, head_idx, i * NUM_WARPS + warpid, 0});
-        load(l_i, g.l_vec, {batch_idx, head_idx, 0, i * NUM_WARPS + warpid});
-        load(m_i, g.m_vec, {batch_idx, head_idx, 0, i * NUM_WARPS + warpid});
-        load(delta_i, g.delta_vec, {batch_idx, head_idx, 0, i * NUM_WARPS + warpid});
+        load(Q_i, g.Q, {batch_idx, head_idx, i, 0});
+        load(dO_i, g.dOg, {batch_idx, head_idx, i, 0});
+        load(l_i, g.l_vec, {batch_idx, head_idx, 0, i});
+        load(m_i, g.m_vec, {batch_idx, head_idx, 0, i});
+        load(delta_i, g.delta_vec, {batch_idx, head_idx, 0, i});
 
         // 10. S_ij = Q_i K_j^T * scale
         attn_tile<D, float, accum_col_l, mfma_16x16x32> S_ij;

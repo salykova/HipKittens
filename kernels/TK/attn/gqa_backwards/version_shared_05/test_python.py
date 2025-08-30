@@ -251,19 +251,19 @@ for _ in range(num_warmup):
         delta_tk, # delta
     )
 
-    # tk_kernel.dispatch_bwd_combined(
-    #     Q_tk,     
-    #     K_tk,     
-    #     V_tk,     
-    #     O_tk,     
-    #     dO_tk,    
-    #     dQ_tk,   
-    #     dK_tk,    
-    #     dV_tk,    
-    #     m_tk, 
-    #     l_tk,
-    #     delta_tk
-    # )
+    tk_kernel.dispatch_bwd_combined(
+        Q_tk,     
+        K_tk,     
+        V_tk,     
+        O_tk,     
+        dO_tk,    
+        dQ_tk,   
+        dK_tk,    
+        dV_tk,    
+        m_tk, 
+        l_tk,
+        delta_tk
+    )
 
 
 for _ in range(num_iters):
@@ -281,19 +281,19 @@ for _ in range(num_iters):
         delta_tk, # delta
     )
 
-    # tk_kernel.dispatch_bwd_combined(
-    #     Q_tk,     
-    #     K_tk,     
-    #     V_tk,     
-    #     O_tk,     
-    #     dO_tk,    
-    #     dQ_tk,   
-    #     dK_tk,    
-    #     dV_tk,    
-    #     m_tk, 
-    #     l_tk,
-    #     delta_tk
-    # )
+    tk_kernel.dispatch_bwd_combined(
+        Q_tk,     
+        K_tk,     
+        V_tk,     
+        O_tk,     
+        dO_tk,    
+        dQ_tk,   
+        dK_tk,    
+        dV_tk,    
+        m_tk, 
+        l_tk,
+        delta_tk
+    )
 
     end_event.record()
     torch.cuda.synchronize()
