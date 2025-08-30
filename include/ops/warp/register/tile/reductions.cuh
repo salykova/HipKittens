@@ -28,7 +28,7 @@ namespace kittens {
 template<typename op, ducks::rv::all V, ducks::rt::row_like T, bool reset>
 __device__ static inline void row_reduce(V &row_accum, const T &src, const V &src_accum) {
     // I actually like these static asserts because they give more verbose errors when things go wrong.
-    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout>::col_vec_layout>); // compatible layout
+    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout, typename T::matrix_layout>::col_vec_layout>); // compatible layout
     static_assert(std::is_same_v<typename V::T2, typename T::dtype>); // compatible type
     static_assert(V::outer_dim == T::height); // compatible size
 
@@ -53,8 +53,8 @@ __device__ static inline void row_reduce(V &row_accum, const T &src, const V &sr
         RT accum_single = op::template op<RT>(accum_packed.x, accum_packed.y);
 
         if constexpr (std::is_same_v<RT, float>) {
-            float res = __shfl(accum_single, laneid() ^ 32);
-            accum_single = op::template op<RT>(accum_single, res);
+            accum_single = op::template op<RT>(accum_single, __shfl(accum_single, laneid() ^ 16));
+            accum_single = op::template op<RT>(accum_single, __shfl(accum_single, laneid() ^ 32));
         }
         else if constexpr (std::is_same_v<RT, bf16>) {
             uint2_t res = __builtin_amdgcn_permlane32_swap(__bfloat16_as_ushort(accum_single), __bfloat16_as_ushort(accum_single), false, true);
@@ -79,7 +79,7 @@ __device__ static inline void row_reduce(V &row_accum, const T &src, const V &sr
 template<typename op, ducks::rv::all V, ducks::rt::row_layout T, bool reset>
 __device__ static inline void row_reduce(V &row_accum, const T &src, const V &src_accum) {
     // I actually like these static asserts because they give more verbose errors when things go wrong.
-    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout>::col_vec_layout>); // compatible layout
+    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout, typename T::matrix_layout>::col_vec_layout>); // compatible layout
     static_assert(std::is_same_v<typename V::T2, typename T::dtype>); // compatible type
     static_assert(V::outer_dim == T::height); // compatible size
 
@@ -143,7 +143,7 @@ template<typename op, ducks::rv::all V, ducks::rt::col_layout T, bool reset>
 #endif
 __device__ static inline void row_reduce(V &row_accum, const T &src, const V &src_accum) {
     // I actually like these static asserts because they give more verbose errors when things go wrong.
-    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout>::col_vec_layout>); // compatible layout
+    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout, typename T::matrix_layout>::col_vec_layout>); // compatible layout
     static_assert(std::is_same_v<typename V::dtype, typename T::dtype>); // compatible type
     static_assert(V::outer_dim == T::height); // compatible size
 
@@ -225,7 +225,7 @@ template<typename op, ducks::rv::all V, ducks::rt::row_layout T, bool reset>
 #endif
 __device__ static inline void col_reduce(V &col_accum, const T &src, const V &src_accum) {
     // I actually like these static asserts because they give more verbose errors when things go wrong.
-    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout>::row_vec_layout>); // compatible layout
+    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout, typename T::matrix_layout>::row_vec_layout>); // compatible layout
     static_assert(std::is_same_v<typename V::dtype, typename T::dtype>); // compatible type
     static_assert(V::outer_dim == T::width); // compatible size
 
@@ -305,7 +305,7 @@ __device__ static inline void col_reduce(V &col_accum, const T &src, const V &sr
     using RT2 = base_types::packing<RT>::packed_type;
 
     // I actually like these static asserts because they give more verbose errors when things go wrong.
-    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout>::row_vec_layout>); // compatible layout
+    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout, typename T::matrix_layout>::row_vec_layout>); // compatible layout
     static_assert(std::is_same_v<RT2, typename T::dtype>); // compatible type
     static_assert(V::outer_dim == T::width); // compatible size
 
@@ -358,7 +358,7 @@ __device__ static inline void col_reduce(V &col_accum, const T &src, const V &sr
 template<typename op, ducks::rv::all V, ducks::rt::col_layout T, bool reset>
 __device__ static inline void col_reduce(V &col_accum, const T &src, const V &src_accum) {
     // I actually like these static asserts because they give more verbose errors when things go wrong.
-    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout>::row_vec_layout>); // compatible layout
+    static_assert(std::is_same_v<typename V::layout, typename rt_base<typename T::T, typename T::layout, typename T::matrix_layout>::row_vec_layout>); // compatible layout
     static_assert(std::is_same_v<typename V::dtype, typename T::dtype>); // compatible type
     static_assert(V::outer_dim == T::width); // compatible size
 
