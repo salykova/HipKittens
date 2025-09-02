@@ -69,6 +69,7 @@ void micro_tk(const micro_globals g) {
     __shared__ int done[3];       // number of consumer warps finished with a stage
     __shared__ int done_epoch[3];  // epoch of last consumer warp to finish with a stage
     __shared__ int prod_cnt[3];   // producer quorum per stage
+    __shared__ int go[3][M_BLOCK];
     const bool warp_leader = (threadIdx.x % kittens::WARP_THREADS) == 0;
     if (threadIdx.x == 0) {
         #pragma unroll
@@ -158,18 +159,21 @@ void micro_tk(const micro_globals g) {
             int prev = __atomic_load_n(&ready[n2], __ATOMIC_ACQUIRE);
             while (__atomic_load_n(&done_epoch[n2], __ATOMIC_ACQUIRE) < prev)
                 __builtin_amdgcn_s_sleep(1);
-
+        
             #pragma unroll
-            for (int m=0; m<M_BLOCK; ++m) G::load<2,false>(As[n2][m], g.a, {0,0,row+m,tile+2},  swizzled_offsets_A);
+            for (int m=0; m<M_BLOCK; ++m)
+                G::load<2,false>(As[n2][m], g.a, {0,0,row+m,tile+2}, swizzled_offsets_A);
             #pragma unroll
-            for (int n=0; n<N_BLOCK; ++n) G::load<2,false>(Bs[n2][n], g.b, {0,0,col+n,tile+2},  swizzled_offsets_B);
-
-            __builtin_amdgcn_s_waitcnt(0);
-            __threadfence_block();  
-            if (warp_leader) atomicAdd(&prod_cnt[n2], 1);
+            for (int n=0; n<N_BLOCK; ++n)
+                G::load<2,false>(Bs[n2][n], g.b, {0,0,col+n,tile+2}, swizzled_offsets_B);
+        
+            __builtin_amdgcn_s_waitcnt(0);  
+            if (warp_leader)
+                __atomic_fetch_add(&prod_cnt[n2], 1, __ATOMIC_RELEASE); 
+        
             if (threadIdx.x == 0) {
-                while (__atomic_load_n(&prod_cnt[n2], __ATOMIC_ACQUIRE) < NUM_PRODUCER_WORKERS)
-                __builtin_amdgcn_s_sleep(1);
+                while (__atomic_load_n(&prod_cnt[n2], __ATOMIC_ACQUIRE) < NUM_PRODUCER_WORKERS) 
+                    __builtin_amdgcn_s_sleep(1);
                 __atomic_store_n(&ready[n2], next_next_epoch, __ATOMIC_RELEASE);
                 atomicExch(&prod_cnt[n2], 0);
             }
