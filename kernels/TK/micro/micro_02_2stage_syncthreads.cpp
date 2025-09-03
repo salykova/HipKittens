@@ -5,6 +5,7 @@ using namespace kittens;
 constexpr int BLOCK_SIZE = 64;
 constexpr int M_BLOCK = 2;
 constexpr int N_BLOCK = 4;
+constexpr int DOT_SLICE = 32;
 
 constexpr int NEW_ROW_BLOCK_SIZE = BLOCK_SIZE * M_BLOCK;
 constexpr int NEW_COL_BLOCK_SIZE = BLOCK_SIZE * N_BLOCK;
@@ -12,8 +13,11 @@ constexpr int NEW_COL_BLOCK_SIZE = BLOCK_SIZE * N_BLOCK;
 #define NUM_PRODUCER_WORKERS (4)
 #define NUM_CONSUMER_WORKERS (M_BLOCK * 4)
 #define NUM_THREADS ((NUM_PRODUCER_WORKERS + NUM_CONSUMER_WORKERS) * kittens::WARP_THREADS)
+#define NUM_PRODUCER_THREADS (NUM_PRODUCER_WORKERS * kittens::WARP_THREADS)
 
 using G = kittens::group<NUM_PRODUCER_WORKERS>;
+using A_slice = rt_bf<BLOCK_SIZE, DOT_SLICE, row_l>;
+using B_slice = rt_bf<BLOCK_SIZE, DOT_SLICE, row_l>;
 
 #define M 8192
 #define K 8192
@@ -46,15 +50,24 @@ void micro_tk(const micro_globals g) {
     bool is_producer = (warp_group_id == 0);
     bool is_consumer = (warp_group_id > 0 && warp_group_id <= M_BLOCK);
     int consumer_idx = is_consumer ? warp_group_id - 1 : 0;
+
+    using T = typename st_bf<BLOCK_SIZE, BLOCK_SIZE>::dtype;
+    constexpr int bytes_per_thread = 16;
+    constexpr int bytes_per_memcpy = bytes_per_thread * NUM_PRODUCER_THREADS;
+    constexpr int memcpy_per_tile = BLOCK_SIZE * BLOCK_SIZE * sizeof(T) / bytes_per_memcpy;
+    uint32_t swizzled_offsets_A[memcpy_per_tile];
+    uint32_t swizzled_offsets_B[memcpy_per_tile];
+    G::prefill_swizzled_offsets(As[0][0], g.a, swizzled_offsets_A);
+    G::prefill_swizzled_offsets(Bs[0][0], g.b, swizzled_offsets_B);
     
     int tic = 0;
     int toc = 1;
     if (is_producer) {
         for (int m = 0; m < M_BLOCK; m++) {
-            G::load<2, false>(As[tic][m], g.a, {0, 0, row + m, 0});
+            G::load<2, false>(As[tic][m], g.a, {0, 0, row + m, 0}, swizzled_offsets_A);
         }
         for (int n = 0; n < N_BLOCK; n++) {
-            G::load<2, false>(Bs[tic][n], g.b, {0, 0, col + n, 0});
+            G::load<2, false>(Bs[tic][n], g.b, {0, 0, col + n, 0}, swizzled_offsets_B);
         }
         __builtin_amdgcn_s_waitcnt(0);
     }
@@ -63,32 +76,56 @@ void micro_tk(const micro_globals g) {
 
     if (is_consumer) {zero(C_accum);}
     int num_tiles = K / BLOCK_SIZE;
-    #pragma unroll (1)
-    for (int tile = 0; tile < num_tiles; ++tile, tic ^= 1, toc ^= 1) {
+    #pragma unroll
+    for (int tile = 0; tile < num_tiles-1; ++tile, tic ^= 1, toc ^= 1) {
 
-        if (is_producer && (tile+1) < num_tiles) {
+        if (is_producer) {
             #pragma unroll
             for (int m = 0; m < M_BLOCK; m++) {
-                G::load<2, false>(As[toc][m], g.a, {0, 0, row + m, tile + 1});
+                G::load<2, false>(As[toc][m], g.a, {0, 0, row + m, tile + 1}, swizzled_offsets_A);
         }
             #pragma unroll
             for (int n = 0; n < N_BLOCK; n++) {
-                G::load<2, false>(Bs[toc][n], g.b, {0, 0, col + n,tile + 1});
+                G::load<2, false>(Bs[toc][n], g.b, {0, 0, col + n,tile + 1}, swizzled_offsets_B);
             }
             __builtin_amdgcn_s_waitcnt(0);
         } else if (is_consumer) {
-            rt_bf<BLOCK_SIZE, BLOCK_SIZE, row_l> a_reg;
-            rt_bf<BLOCK_SIZE, BLOCK_SIZE, row_l> b_reg;
-            load(a_reg, As[tic][consumer_idx]);
-            load(b_reg, Bs[tic][local_warp_id]);
+            A_slice a0;
+            B_slice b0;
+
+            load(a0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(As[tic][consumer_idx], {0,0}));
+            load(b0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(Bs[tic][local_warp_id], {0,0}));
             asm volatile("s_waitcnt lgkmcnt(0)");
             __builtin_amdgcn_s_setprio(1);
-            mma_ABt(C_accum, a_reg, b_reg, C_accum);
+            mma_ABt(C_accum, a0, b0, C_accum);
+            __builtin_amdgcn_s_setprio(0);
+
+            load(a0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(As[tic][consumer_idx], {0,1}));
+            load(b0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(Bs[tic][local_warp_id], {0,1}));
+            asm volatile("s_waitcnt lgkmcnt(0)");
+            __builtin_amdgcn_s_setprio(1);
+            mma_ABt(C_accum, a0, b0, C_accum);
             __builtin_amdgcn_s_setprio(0);
         }
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
 
+    }
+    if (is_consumer) { 
+        A_slice a0;
+        B_slice b0;
+        load(a0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(As[tic][consumer_idx], {0,0}));
+        load(b0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(Bs[tic][local_warp_id], {0,0}));
+        asm volatile("s_waitcnt lgkmcnt(0)");
+        __builtin_amdgcn_s_setprio(1);
+        mma_ABt(C_accum, a0, b0, C_accum);
+        __builtin_amdgcn_s_setprio(0);
+        load(a0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(As[tic][consumer_idx], {0,1}));
+        load(b0, subtile_inplace<BLOCK_SIZE, DOT_SLICE>(Bs[tic][local_warp_id], {0,1}));
+        asm volatile("s_waitcnt lgkmcnt(0)");
+        __builtin_amdgcn_s_setprio(1);
+        mma_ABt(C_accum, a0, b0, C_accum);
+        __builtin_amdgcn_s_setprio(0);
     }
     if (is_consumer) {
         store(g.c, C_accum, {0, 0, row + consumer_idx, col + local_warp_id});

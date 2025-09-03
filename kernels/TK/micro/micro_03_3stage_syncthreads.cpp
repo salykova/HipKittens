@@ -210,7 +210,9 @@ void micro_tk(const micro_globals g) {
 
 
     rt_fl<BLOCK_SIZE, BLOCK_SIZE, accum_col_l> C_accum;
-    if (is_consumer) {zero(C_accum);}
+    if (is_consumer) {
+        zero(C_accum);
+    }
     const int num_tiles = K / BLOCK_SIZE;
 
     #pragma unroll
@@ -220,7 +222,7 @@ void micro_tk(const micro_globals g) {
             for (int m=0; m<M_BLOCK; ++m) G::load<2,false>(As[n2][m], g.a, {0,0, row+m, tile+2}, swizzled_offsets_A);
             #pragma unroll
             for (int n=0; n<N_BLOCK; ++n) G::load<2,false>(Bs[n2][n], g.b, {0,0, col+n, tile+2}, swizzled_offsets_B);
-            asm volatile("s_waitcnt vmcnt(0)");
+            __builtin_amdgcn_s_waitcnt(0);
         } else if (is_consumer) {
             A_slice a0;
             B_slice b0;
