@@ -314,7 +314,7 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
         // 15. dQ_i += dS_ij @ K_j (32x16)=(32x256)x(256x16)
         // load(dP_ij_bf16_row, g.dS_ij, {batch_idx,head_idx,i,j});
         load(dP_ij_bf16_col_T, subtile_inplace<WARP_SIZE_KV, WARP_SIZE_QO>(attn_i_smem, {warpid, 0}));
-        load(K_j_col, g.K, {batch_idx, head_idx, j, 0});  // TODO: replace with SMEM load
+        load(K_j_col, subtile_inplace<WARP_SIZE_KV, D>(K_j_smem, {warpid, 0}));
         zero(dQ_i_T);
         mma_AtB(dQ_i_T, K_j_col, dP_ij_bf16_col_T,  dQ_i_T);
         qo_tile<D, float, accum_row_l> dQ_i;
