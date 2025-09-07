@@ -73,7 +73,7 @@ template<int D> struct attn_bwd_combined_globals {
     gl<bf16, -1, -1, -1, -1> Q, K, V, O;
     gl<bf16, -1, -1, -1, -1> dOg, dQg, dKg, dVg;
     gl<float, -1, -1, -1, -1> L_vec, delta_vec;
-    dim3 grid() { return dim3(ATTN_N / BLOCK_SIZE_KV, ATTN_H, ATTN_B); }
+    dim3 grid() { return dim3((ATTN_N / BLOCK_SIZE_KV), ATTN_H, ATTN_B); }
     dim3 block() { return dim3(NUM_THREADS); }
     size_t dynamic_shared_memory() { return MAX_SHARED_MEMORY; }
 };
@@ -225,21 +225,25 @@ __device__ inline static void atomic_pk_add_bf16_with_warpid(const GL &dst, cons
     std::uint64_t  as_u64 = static_cast<std::uint64_t>(as_int);
     buffer_resource br = make_buffer_resource(as_u64, buffer_size, 0x00020000);
 
-    int col_offset = (laneid/src.tile_size_row) * 4 + warpid * 16;
-    int row_offset = laneid%(src.tile_size_row);
+    // int col_offset = (laneid/src.tile_size_row) * 4 + warpid * 16;
+    // int row_offset = laneid%(src.tile_size_row);
+    int lane_offset = laneid * 4 + warpid * 256;
 
     #pragma unroll
     for(int i = 0; i < src.height; i++) {
         #pragma unroll
         for(int j = 0; j < src.width; j++) {
-            int col = src.tile_size_col*j + col_offset;
-            int row = src.tile_size_row*i + row_offset;
+            // int col = src.tile_size_col*j + col_offset;
+            // int row = src.tile_size_row*i + row_offset;
+            int tile_offset = i * row_stride * src.tile_size_row;
 
             const U2 val_0 = base_types::convertor<U2, T2>::convert(src.tiles[i][j].data[0]);
             const U2 val_1 = base_types::convertor<U2, T2>::convert(src.tiles[i][j].data[1]);
 
-            uint32_t byte_offset_0 = static_cast<uint32_t>((row * row_stride + col + 0) * sizeof(U));
-            uint32_t byte_offset_1 = static_cast<uint32_t>((row * row_stride + col + 2) * sizeof(U));
+            // uint32_t byte_offset_0 = static_cast<uint32_t>((row * row_stride + col + 0) * sizeof(U));
+            // uint32_t byte_offset_1 = static_cast<uint32_t>((row * row_stride + col + 2) * sizeof(U));
+            uint32_t byte_offset_0 = static_cast<uint32_t>((tile_offset + lane_offset) * sizeof(U));
+            uint32_t byte_offset_1 = static_cast<uint32_t>((tile_offset + lane_offset + 2) * sizeof(U));
 
             uint32_t val_0_bits = *reinterpret_cast<const uint32_t*>(&val_0);
             uint32_t val_1_bits = *reinterpret_cast<const uint32_t*>(&val_1);
@@ -259,6 +263,46 @@ __device__ inline static void atomic_pk_add_bf16_with_warpid(const GL &dst, cons
                   "s"(*(i32x4*)&br)                         // %8
                 : "memory"
             );
+        }
+    }
+}
+
+template<int axis, ducks::rt::accumulator_row_layout RT, ducks::gl::all GL, ducks::coord::tile COORD=coord<RT>>
+__device__ inline static void load_shuffled(RT &dst, const GL &src, const COORD &idx) {
+    using T2 = RT::dtype;
+    using U = typename GL::dtype;
+    using U2 = base_types::packing<U>::packed_type;
+
+    static_assert(std::is_same_v<U, bf16>, "load_shuffled is only supported for bf16");
+
+    U *src_ptr = (U*)&src[(idx.template unit_coord<axis, 3>())];
+    const int row_stride = src.template stride<axis>();
+    int laneid = kittens::laneid();
+
+    int tile_row_stride = row_stride * dst.tile_size_row;
+    int tile_stride = dst.tile_size_row * dst.tile_size_col;
+
+    uint32_t buffer_size = src.batch() * src.depth() * src.rows() * src.cols() * sizeof(U);
+    std::uintptr_t as_int = reinterpret_cast<std::uintptr_t>(src_ptr);
+    std::uint64_t  as_u64 = static_cast<std::uint64_t>(as_int);    // widen if host is 32-bit
+    buffer_resource br = make_buffer_resource(as_u64, buffer_size, 0x00020000);
+
+    #pragma unroll
+    for(int i = 0; i < dst.height; i++) {
+        #pragma unroll
+        for(int j = 0; j < dst.width; j++) {
+            U2* tmp;
+            float2 loaded = std::bit_cast<float2>(llvm_amdgcn_raw_buffer_load_b64(
+                std::bit_cast<i32x4>(br),
+                (i * tile_row_stride + j * tile_stride + laneid * 4) * sizeof(U),
+                0,
+                0
+            ));
+            tmp = reinterpret_cast<U2*>(&loaded);
+            #pragma unroll
+            for(int k = 0; k < dst.packed_per_thread; k++) {
+                dst.tiles[i][j].data[k] = base_types::convertor<T2, U2>::convert(tmp[k]);
+            }
         }
     }
 }
@@ -380,11 +424,8 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
             mma_ABt(dP_ij, dO_i, V_j, dP_ij);
             mul(dP_ij, dP_ij, scale_factor);
             mul(delta_i, delta_i, scale_factor); // really weird compiler lifetime thing
-            // __builtin_amdgcn_sched_barrier(0);
             sub_row(dP_ij, dP_ij, delta_i);
-            // mul(dP_ij, dP_ij, scale_factor);
             mul(dP_ij, dP_ij, P_ij);
-            // mul(dP_ij, dP_ij, scale_factor);
             copy(dP_ij_bf16, dP_ij);
             // store(g.dS, dP_ij_bf16, {batch_idx, head_idx, i * 2, j});
             swap_layout_and_transpose(dP_ij_bf16_accum_row, dP_ij_bf16);
@@ -485,9 +526,7 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
             mma_ABt(dP_ij, dO_i, V_j, dP_ij);
             mul(dP_ij, dP_ij, scale_factor);
             mul(delta_i, delta_i, scale_factor); // really weird compiler lifetime thing
-            // __builtin_amdgcn_sched_barrier(0);
             sub_row(dP_ij, dP_ij, delta_i);
-            // mul(dP_ij, dP_ij, scale_factor);
             mul(dP_ij, dP_ij, P_ij);
             copy(dP_ij_bf16, dP_ij);
             // store(g.dS, dP_ij_bf16, {batch_idx, head_idx, i * 2 + 1, j});
@@ -515,7 +554,8 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
 
             load(Q_i_col, subtile_inplace<DOT_SLICE_QO, D>(Q_i_smem[tic], {1, 0}));
             __builtin_amdgcn_sched_barrier(0);
-            asm volatile("s_waitcnt lgkmcnt(0)");
+            // asm volatile("s_waitcnt lgkmcnt(0)");
+            __builtin_amdgcn_s_waitcnt(0);
             __builtin_amdgcn_sched_barrier(0);
             __builtin_amdgcn_s_barrier();
             __builtin_amdgcn_sched_barrier(0);
@@ -532,8 +572,8 @@ __global__ void attend_bwd_combined_ker(const attn_bwd_combined_globals<D> g) {
             load(dP_ij_bf16_col_T, attn_i_smem); // bank conflicts
             load(K_j_col, subtile_inplace<256, 16>(K_j_smem, {0, warpid})); // bank conflicts
             __builtin_amdgcn_sched_barrier(0);
-            // asm volatile("s_waitcnt lgkmcnt(0)");
-            __builtin_amdgcn_s_waitcnt(0);
+            asm volatile("s_waitcnt lgkmcnt(0)");
+            // __builtin_amdgcn_s_waitcnt(0);
             __builtin_amdgcn_sched_barrier(0);
             __builtin_amdgcn_s_barrier();
             __builtin_amdgcn_sched_barrier(0);
@@ -778,6 +818,36 @@ void dispatch_bwd_combined(attn_bwd_combined_globals<D> g) {
     hipDeviceSynchronize();
 }
 
+template<int D> struct attn_dq_shuffle_globals { 
+    gl<bf16, -1, -1, -1, -1> dQg;
+    dim3 grid() { return dim3(ATTN_B, ATTN_H, ATTN_N / (DOT_SLICE_QO * NUM_WARPS)); }
+    dim3 block() { return dim3(NUM_THREADS); }
+    size_t dynamic_shared_memory() { return MAX_SHARED_MEMORY; }
+};
+
+template<int D> __launch_bounds__(NUM_THREADS, 1)
+__global__ void attend_dq_shuffle_ker(const attn_dq_shuffle_globals<D> g) {
+    
+    const int batch_idx = blockIdx.x;
+    const int head_idx = blockIdx.y;
+    const int seq_idx = blockIdx.z;
+
+    const int warpid = kittens::warpid();
+
+    qo_tile<D, bf16, accum_row_l> dQg;
+
+    load_shuffled<2>(dQg, g.dQg, {batch_idx, head_idx, seq_idx * NUM_WARPS + warpid, 0});
+    store(g.dQg, dQg, {batch_idx, head_idx, seq_idx * NUM_WARPS + warpid, 0});
+}
+
+template<int D>
+void dispatch_dq_shuffle(attn_dq_shuffle_globals<D> g) {
+    unsigned long mem_size = g.dynamic_shared_memory();
+    hipFuncSetAttribute((void*)attend_dq_shuffle_ker<D>, hipFuncAttributeMaxDynamicSharedMemorySize, mem_size);
+    attend_dq_shuffle_ker<D><<<g.grid(), g.block(), mem_size>>>(g);
+    hipDeviceSynchronize();
+}
+
 PYBIND11_MODULE(tk_kernel, m) {
     m.doc() = "tk_kernel python module";
 
@@ -800,5 +870,9 @@ PYBIND11_MODULE(tk_kernel, m) {
         &attn_bwd_combined_globals<ATTN_D>::L_vec, 
         &attn_bwd_combined_globals<ATTN_D>::delta_vec
         // &attn_bwd_combined_globals<ATTN_D>::delta_vec_out
+    );
+
+    py::bind_function<dispatch_dq_shuffle<ATTN_D>>(m, "dispatch_dq_shuffle", 
+        &attn_dq_shuffle_globals<ATTN_D>::dQg
     );
 }
