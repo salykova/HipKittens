@@ -12,6 +12,21 @@
 | micro_07_2stage_8c4p_nblock8.cpp (Scratch/Spills) | (128)x(512)   | 8 consumers, 4 producers; 2-stage; n-block 8 |
 
 
+## Debug async code
 
+```bash
+apt update && apt install screen
+screen -S mysession
+Ctrl+A, C - Create new window
+Ctrl+A, N - Next window
+Ctrl+A, P - Previous window
+Ctrl+A, D - Detach session
+Ctrl+A, K - Kill current window
+```
+
+Or:
+```bash
+timeout 30s python test_gemm.py
+```
 
 

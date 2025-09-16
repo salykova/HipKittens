@@ -127,6 +127,7 @@ void micro_tk(const micro_globals g) {
             atomicExch(&prod_cnt[n1], 0); // reset
         } 
     }
+    __syncthreads();
 
     rt_fl<BLOCK_SIZE, BLOCK_SIZE, accum_col_l> C_accum;
     if (is_consumer) {zero(C_accum);}

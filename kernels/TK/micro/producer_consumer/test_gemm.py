@@ -2,15 +2,23 @@ import torch
 import tk_kernel
 import random
 import time
-from aiter.tuned_gemm import tgemm
+import argparse
+# from aiter.tuned_gemm import tgemm
 
 torch.manual_seed(0)
 random.seed(0)
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--profile', type=bool, default=False)
+args = parser.parse_args()
+
 # Inputs
-M = 192*40
-N = 192*40
-K = 192*40
+# M = 192*40
+# N = 192*40
+# K = 192*40
+M = 9216
+N = 9216
+K = 9216
 # A = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / 10.0  
 # B = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / 10.0  
 # Bt = B.t().contiguous()  # Transpose B for the kernel
@@ -19,10 +27,12 @@ num_blocks_x = (M / 192)
 num_blocks_y = (N / 256)
 print(f"{num_blocks_x=} mod 32 {num_blocks_x % 32}, {num_blocks_y=} mod 32 {num_blocks_y % 32}\n")
 
-
-
-num_warmup = 500
-num_iters = 500
+if args.profile:
+    num_warmup = 10
+    num_iters = 20
+else:
+    num_warmup = 0
+    num_iters = 1
 
 start_event = torch.cuda.Event(enable_timing=True) # in milliseconds
 end_event = torch.cuda.Event(enable_timing=True)
@@ -56,29 +66,30 @@ print(f"PyTorch reference average execution time: {avg_time_ref:.4f} ms")
 print(f"PyTorch reference performance: {tflops_ref:.2f} TFLOPS for {M}x{K} by {K}x{N} matrix multiplication.\n")
 
 
-for _ in range(num_warmup):
-    A = torch.randn(M, K, dtype=torch.bfloat16, device='cuda') / 10.0  
-    B = torch.randn(N, K, dtype=torch.bfloat16, device='cuda') / 10.0  
-    C_aiter = tgemm.mm(A, B, None, None, None)
-timings_aiter = []
-for _ in range(num_iters):
-    A = torch.randn(M, K, dtype=torch.bfloat16, device='cuda') / 10.0  
-    B = torch.randn(N, K, dtype=torch.bfloat16, device='cuda') / 10.0  
-    torch.cuda.synchronize()
-    start_event.record()
-    C_aiter = tgemm.mm(A, B, None, None, None)
-    end_event.record()
-    torch.cuda.synchronize()
-    elapsed_time = start_event.elapsed_time(end_event)
-    timings_aiter.append(elapsed_time)
-print(f"{C_aiter.dtype=}")
-avg_time_aiter = sum(timings_aiter) / len(timings_aiter)
-tflops_aiter = flops_ref / (avg_time_aiter * 1e9) 
-print(f"AITER (AMD) reference average execution time: {avg_time_aiter:.4f} ms")
-print(f"AITER (AMD) reference performance: {tflops_aiter:.2f} TFLOPS for {M}x{K} by {K}x{N} matrix multiplication.\n")
+# for _ in range(num_warmup):
+#     A = torch.randn(M, K, dtype=torch.bfloat16, device='cuda') / 10.0  
+#     B = torch.randn(N, K, dtype=torch.bfloat16, device='cuda') / 10.0  
+#     C_aiter = tgemm.mm(A, B, None, None, None)
+# timings_aiter = []
+# for _ in range(num_iters):
+#     A = torch.randn(M, K, dtype=torch.bfloat16, device='cuda') / 10.0  
+#     B = torch.randn(N, K, dtype=torch.bfloat16, device='cuda') / 10.0  
+#     torch.cuda.synchronize()
+#     start_event.record()
+#     C_aiter = tgemm.mm(A, B, None, None, None)
+#     end_event.record()
+#     torch.cuda.synchronize()
+#     elapsed_time = start_event.elapsed_time(end_event)
+#     timings_aiter.append(elapsed_time)
+# print(f"{C_aiter.dtype=}")
+# avg_time_aiter = sum(timings_aiter) / len(timings_aiter)
+# tflops_aiter = flops_ref / (avg_time_aiter * 1e9) 
+# print(f"AITER (AMD) reference average execution time: {avg_time_aiter:.4f} ms")
+# print(f"AITER (AMD) reference performance: {tflops_aiter:.2f} TFLOPS for {M}x{K} by {K}x{N} matrix multiplication.\n")
 
 
 # Kernel matmul
+print("Running kernel matmul...")
 C = torch.zeros(M, N, dtype=torch.bfloat16, device='cuda')
 for _ in range(num_warmup):
     A = torch.randn(M, K, dtype=torch.bfloat16, device='cuda') / 10.0  
@@ -124,3 +135,7 @@ print(f"Max error between kernel and reference: {max_error}")
 print(f"Max error: {max_error}")
 print(f"Mean error: {mean_error}")
 print(f"Number of large errors (>0.1): {error_count} out of {M*N}\n")
+
+# breakpoint()
+
+
