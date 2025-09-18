@@ -161,16 +161,16 @@ def generate_inputs():
     return Q, K, V, dO
 
 def read_inputs():
-    Q_bhnd = torch.load("inputs_b/q.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
-    K_bhnd = torch.load("inputs_b/k.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
-    V_bhnd = torch.load("inputs_b/v.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
-    dO_bhnd = torch.load("inputs_b/dO.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
+    Q_bhnd = torch.load("inputs/q.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
+    K_bhnd = torch.load("inputs/k.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
+    V_bhnd = torch.load("inputs/v.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
+    dO_bhnd = torch.load("inputs/dO.pt", map_location='cuda').transpose(1, 2).contiguous().bfloat16()
     return Q_bhnd, K_bhnd, V_bhnd, dO_bhnd
 
 def read_prepare_inputs():
-    L_tk = torch.load("inputs_b/L.pt", map_location='cuda').contiguous().float()
-    delta_tk = torch.load("inputs_b/delta.pt", map_location='cuda').contiguous().float()
-    O_tk = torch.load("inputs_b/O.pt", map_location='cuda').contiguous().bfloat16()
+    L_tk = torch.load("inputs/L.pt", map_location='cuda').contiguous().float()
+    delta_tk = torch.load("inputs/delta.pt", map_location='cuda').contiguous().float()
+    O_tk = torch.load("inputs/O.pt", map_location='cuda').contiguous().bfloat16()
     return L_tk, delta_tk, O_tk
 
 # Generate base inputs in BHND format
