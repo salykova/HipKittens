@@ -53,9 +53,9 @@ void micro_tk(const micro_globals<D> g) {
     __builtin_amdgcn_sched_barrier(0);
 
     #ifdef COL
-    store(g.out, Q_i_col, {0, 0, 0, 0});
+    store<1>(g.out, Q_i_col, {0, 0, 0, 0});
     #else
-    store(g.out, Q_i, {0, 0, 0, 0});
+    store<1>(g.out, Q_i, {0, 0, 0, 0});
     #endif
 
     __builtin_amdgcn_s_waitcnt(0);
@@ -73,9 +73,9 @@ void micro_tk(const micro_globals<D> g) {
     __builtin_amdgcn_sched_barrier(0);
 
     #ifdef COL
-    store(g.out, Q_i_col, {0, 16, 0, 0});
+    store<1>(g.out, Q_i_col, {0, 1, 0, 0});
     #else
-    store(g.out, Q_i, {0, 16, 0, 0});
+    store<1>(g.out, Q_i, {0, 1, 0, 0});
     #endif
 }
 
