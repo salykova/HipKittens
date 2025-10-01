@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch import Tensor
 from torchvision.ops import StochasticDepth
 
-from .mixers.mha import MHA
+from .mha import MHA
 from .mlp import Mlp
 
 from llama.ops.triton.layer_norm import RMSNorm
@@ -74,7 +74,6 @@ class Block(nn.Module):
             self.dropout2 = dropout_cls(resid_dropout2)
             self.drop_path2 = StochasticDepth(drop_path2, mode="row")
             self.norm2 = norm_cls(dim)
-
         self.layer_idx = layer_idx
 
         # TD [2023-01-07]: TODO: During training, if sequence_parallel is False and dropout != 0.0,
@@ -152,30 +151,4 @@ class Block(nn.Module):
                 hidden_states = self.mlp(hidden_states)
             return hidden_states, residual
         else:
-            assert residual is None
-            if position_ids is not None or decay is not None:
-                mixer_out = self.mixer(
-                    hidden_states, position_ids=position_ids, decay=decay, **(mixer_kwargs if mixer_kwargs is not None else {})
-                )
-            else:
-                mixer_out = self.mixer(hidden_states, **(mixer_kwargs if mixer_kwargs is not None else {}))
-            if self.return_residual:  # mixer out is actually a pair here
-                mixer_out, hidden_states = mixer_out
-
-            hidden_states = self.norm1(
-                (self.drop_path1(self.dropout1(mixer_out)) + hidden_states).to(
-                    dtype=self.norm1.weight.dtype
-                )
-            )
-            
-            if not isinstance(self.mlp, nn.Identity):
-                mlp_out = self.mlp(hidden_states)
-                if self.return_residual:  # mlp out is actually a pair here
-                    mlp_out, hidden_states = mlp_out
-
-                hidden_states = self.norm2(
-                    (self.drop_path2(self.dropout2(mlp_out)) + hidden_states).to(
-                        dtype=self.norm2.weight.dtype
-                    )
-                )
-            return hidden_states
+            assert False, "Only prenorm is supported"

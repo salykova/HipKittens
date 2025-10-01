@@ -10,7 +10,7 @@ from transformers import GPT2Config
 
 from .block import Block
 from .embedding import GPT2Embeddings
-from .mixers.mha import MHA
+from .mha import MHA
 from .mlp import GatedMlp
 
 from llama.ops.triton.layer_norm import RMSNorm
@@ -18,7 +18,7 @@ from llama.ops.triton.layer_norm import RMSNorm
 logger = logging.getLogger(__name__)
 
 
-from llama.utils.hf import load_config_hf, load_state_dict_hf
+from .utils.hf import load_config_hf, load_state_dict_hf
 
 class GPT2MixerConfig(GPT2Config):
     def __init__(self, *args, **kwargs):

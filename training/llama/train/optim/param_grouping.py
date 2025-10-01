@@ -4,12 +4,9 @@ import torch.nn as nn
 
 import hydra
 
-try:
-    from apex.contrib.layer_norm import FastLayerNorm
-except ImportError:
-    FastLayerNorm = None
+FastLayerNorm = None
 
-from llama.models.modules.seq_common import PositionalEncoding
+from llama.models.seq_common import PositionalEncoding
 
 
 def group_parameters_for_optimizer(model, optimizer_cfg, bias_weight_decay=False,
