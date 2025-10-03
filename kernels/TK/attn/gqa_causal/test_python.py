@@ -20,7 +20,7 @@ D = 128
 causal = True
 dtype = torch.bfloat16
 
-num_warmup = 50
+num_warmup = 100
 num_iters = 100
 
 def flops(batch, seqlen, nheads, headdim, causal, mode="fwd"):
