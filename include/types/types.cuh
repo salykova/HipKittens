@@ -52,17 +52,16 @@ using col_vec = T::col_vec;
 // register tile layouts
 using row_l = ducks::rt_layout::row;
 using col_l = ducks::rt_layout::col;
-using accum_col_l = ducks::rt_layout::accumulator_col;
-using accum_row_l = ducks::rt_layout::accumulator_row;
 
 // register vector layouts
 using align_l = ducks::rv_layout::align;
 using ortho_l = ducks::rv_layout::ortho;
 using naive_l = ducks::rv_layout::naive;
-using accum_align_l = ducks::rv_layout::accum_align;
 
-// register matrix layouts
-using mfma_16x16x32 = ducks::rt_matrix::mfma_16x16x32;
-using mfma_32x32x16 = ducks::rt_matrix::mfma_32x32x16;
+// register tile shapes
+using rt_16x16_s = ducks::rt_shape::rt_16x16;
+using rt_32x32_s = ducks::rt_shape::rt_32x32;
+using rt_16x32_s = ducks::rt_shape::rt_16x32;
+using rt_32x16_s = ducks::rt_shape::rt_32x16;
 
 }

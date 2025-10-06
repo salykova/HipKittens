@@ -10,15 +10,15 @@
 namespace kittens {
 namespace ducks {
 /**
-* @namespace rt_tile
+* @namespace rt_shape
 * 
 * @brief A namespace for template metaprogramming with register tile layouts.
 * Assumption below is that the col is the reduction dimension
 */
-namespace rt_tile {
+namespace rt_shape {
  
 template<int _rows, int _cols, int _stride>
-struct rt_tile {
+struct rt_shape {
     static constexpr int rows = _rows;
     static constexpr int cols = _cols;
     static constexpr int stride = _stride;
@@ -26,15 +26,15 @@ struct rt_tile {
     static constexpr int elements_per_thread = num_elements / kittens::WARP_THREADS;
 };
 
-using 16x16 = rt_tile<16, 16, 4>;
-using 32x32 = rt_tile<32, 32, 4>;
-using 16x32 = rt_tile<16, 32, 8>;
-using 32x16 = rt_tile<32, 16, 8>;
+using rt_16x16 = rt_shape<16, 16, 4>;
+using rt_32x32 = rt_shape<32, 32, 4>;
+using rt_16x32 = rt_shape<16, 32, 8>;
+using rt_32x16 = rt_shape<32, 16, 8>;
 
  
 template<typename T>
-concept all = std::is_same_v<T, 16x16> || std::is_same_v<T, 32x32> || std::is_same_v<T, 16x32> || std::is_same_v<T, 32x16>;
+concept all = std::is_same_v<T, rt_16x16> || std::is_same_v<T, rt_32x32> || std::is_same_v<T, rt_16x32> || std::is_same_v<T, rt_32x16>;
 
-} // namespace rt_tile
+} // namespace rt_shape
 } // namespace ducks
 } // namespace kittens

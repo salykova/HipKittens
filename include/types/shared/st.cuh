@@ -187,7 +187,7 @@ struct st_subtile {
         col_offset = rowcol.y * cols;
     }
 
-    __device__ static inline T* idx(T *ptr, int2 coord) {
+    __device__ inline T* idx(T *ptr, int2 coord) {
         int r = coord.x+row_offset, c = coord.y+col_offset; // alias
 
         if constexpr (underlying_row_bytes % 128 == 0) {
@@ -214,7 +214,7 @@ struct st_subtile {
         }
     }
 
-    __device__ static inline uint32_t idx(uint32_t ptr, int2 coord) {
+    __device__ inline uint32_t idx(uint32_t ptr, int2 coord) {
         int r = coord.x+row_offset, c = coord.y+col_offset; // alias
 
         if constexpr (underlying_row_bytes % 128 == 0) {

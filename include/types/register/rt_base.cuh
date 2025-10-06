@@ -9,7 +9,7 @@
 
 #include "../../common/common.cuh"
 #include "rt_layout.cuh"
-#include "rt_tile.cuh"
+#include "rt_shape.cuh"
 #include "rv_layout.cuh"
 
 namespace kittens {
@@ -42,10 +42,10 @@ struct identifier {};
  * 
  * In general, you probably want a row-major tile, unless you specifically want to call mma
  */
-template<typename _T, ducks::rt_layout::all _layout, ducks::rt_tile::all _tile> struct rt_base {
+template<typename _T, ducks::rt_layout::all _layout, ducks::rt_shape::all _shape> struct rt_base {
     using identifier = ducks::rt_base::identifier; ///< Type identifier for the rt_base structure.
     using layout = _layout; ///< Layout of the matrix tile.
-    using tile = _tile; ///< Layout of the matrix tile.
+    using shape = _shape; ///< Layout of the matrix tile.
     static_assert(kittens::ducks::base_types::T1<_T>); // confirm it's a supported type
     using T = kittens::base_types::packing<_T>::unpacked_type;
     using T2 = kittens::base_types::packing<_T>::packed_type;
@@ -56,11 +56,11 @@ template<typename _T, ducks::rt_layout::all _layout, ducks::rt_tile::all _tile> 
         "rt_base was provided an unsupported type."
     );
 
-    static constexpr int rows = _tile::rows;
-    static constexpr int cols = _tile::cols;
-    static constexpr int stride = _tile::stride;
-    static constexpr int num_elements = _tile::num_elements;
-    static constexpr int elements_per_thread = _tile::elements_per_thread;
+    static constexpr int rows = _shape::rows;
+    static constexpr int cols = _shape::cols;
+    static constexpr int stride = _shape::stride;
+    static constexpr int num_elements = _shape::num_elements;
+    static constexpr int elements_per_thread = _shape::elements_per_thread;
 
     static_assert(num_elements % stride == 0, "num_elements must be divisible by stride");
 
@@ -95,7 +95,7 @@ template<typename T> concept all = requires {
 } // namespace ducks
 
 /* ----------  WRAPPERS FOR PRETTINESS  ---------- */
-template<ducks::rt_layout::all L=ducks::rt_layout::row, ducks::rt_tile::all T=ducks::rt_tile::16x16> using rt_base_fl = rt_base<float, L, T>;
-template<ducks::rt_layout::all L=ducks::rt_layout::row, ducks::rt_tile::all T=ducks::rt_tile::16x16> using rt_base_bf = rt_base<bf16, L, T>;
-template<ducks::rt_layout::all L=ducks::rt_layout::row, ducks::rt_tile::all T=ducks::rt_tile::16x16> using rt_base_hf = rt_base<half, L, T>;
+template<ducks::rt_layout::all L=ducks::rt_layout::row, ducks::rt_shape::all S=ducks::rt_shape::rt_16x16> using rt_base_fl = rt_base<float, L, S>;
+template<ducks::rt_layout::all L=ducks::rt_layout::row, ducks::rt_shape::all S=ducks::rt_shape::rt_16x16> using rt_base_bf = rt_base<bf16, L, S>;
+template<ducks::rt_layout::all L=ducks::rt_layout::row, ducks::rt_shape::all S=ducks::rt_shape::rt_16x16> using rt_base_hf = rt_base<half, L, S>;
 }

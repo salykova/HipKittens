@@ -45,7 +45,7 @@ struct identifier {};
  * the register layouts used by the tensor cores. ThunderKittens wants you working with tiles
  * where possible!
  */
-template<typename _T, size_t _length, size_t _tile_length, ducks::rv_layout::all _layout=ducks::rv_layout::naive, ducks::rt_tile::all _tile=ducks::rt_tile::16x16>
+template<typename _T, size_t _length, size_t _tile_length, ducks::rv_layout::all _layout=ducks::rv_layout::naive, ducks::rt_shape::all _shape=ducks::rt_shape::rt_16x16>
 struct rv {
     using identifier = ducks::rv::identifier; ///< Type identifier for the rv structure.
     static_assert(kittens::ducks::base_types::T1<_T>); // confirm it's a supported type
@@ -59,7 +59,7 @@ struct rv {
     static constexpr int length = _length; ///< Length in elements.
     static_assert(length % _tile_length == 0, "Length must be divisible by the tile dimension");
     static constexpr int tiles  = _length / _tile_length; ///< Length in subtiles, aliased for consistency with sv type
-    static constexpr int inner_dim = is_naive || is_ortho ? 1 : _tile::elements_per_thread;
+    static constexpr int inner_dim = is_naive || is_ortho ? 1 : _shape::elements_per_thread;
     static constexpr int outer_dim = is_naive ? (tiles + 1) / 2 : tiles;
 
     dtype data[outer_dim][inner_dim]; ///< The actual register vector data.
@@ -94,8 +94,8 @@ template<typename T> concept tile_layout = align_layout<T> || ortho_layout<T>;
 } // namespace rv
 } // namespace ducks
 
-template<int _l, int _tile_length, ducks::rv_layout::all layout=ducks::rv_layout::naive, ducks::rt_tile::all tile=ducks::rt_tile::16x16> using rv_fl = rv<float, _l, _tile_length, layout, tile>;
-template<int _l, int _tile_length, ducks::rv_layout::all layout=ducks::rv_layout::naive, ducks::rt_tile::all tile=ducks::rt_tile::16x16> using rv_bf = rv<bf16,  _l, _tile_length, layout, tile>;
-template<int _l, int _tile_length, ducks::rv_layout::all layout=ducks::rv_layout::naive, ducks::rt_tile::all tile=ducks::rt_tile::16x16> using rv_hf = rv<half,  _l, _tile_length, layout, tile>;
+template<int _l, int _tile_length, ducks::rv_layout::all layout=ducks::rv_layout::naive, ducks::rt_shape::all shape=ducks::rt_shape::rt_16x16> using rv_fl = rv<float, _l, _tile_length, layout, shape>;
+template<int _l, int _tile_length, ducks::rv_layout::all layout=ducks::rv_layout::naive, ducks::rt_shape::all shape=ducks::rt_shape::rt_16x16> using rv_bf = rv<bf16,  _l, _tile_length, layout, shape>;
+template<int _l, int _tile_length, ducks::rv_layout::all layout=ducks::rv_layout::naive, ducks::rt_shape::all shape=ducks::rt_shape::rt_16x16> using rv_hf = rv<half,  _l, _tile_length, layout, shape>;
 
 } // namespace kittens
