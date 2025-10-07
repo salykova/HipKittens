@@ -28,115 +28,6 @@ template<int D, typename T=float, typename L=accum_col_l> using attn_tile = rt<T
 /**********************************************************/
 
 template<ducks::rt::accumulator_col_layout RT>
-__device__ inline static void mask_kv_tile_original(
-    RT &dst,
-    const int q_abs,
-    const int k_abs
-) {
-    const int lane = laneid();
-    const int col = lane & 31;
-    const int q_pos = q_abs * Q_BLOCK_SIZE + col;
-
-    #pragma unroll
-    for (int i = 0; i < dst.height; ++i) {
-        #pragma unroll
-        for (int j = 0; j < dst.width; ++j) {
-            #pragma unroll
-            for (int ii = 0; ii < 4; ++ii) {
-                const int base_row = (i * 32 + ii * 8 + ((lane >> 5) << 2));
-                const int k_pos = k_abs * KV_BLOCK_SIZE + base_row;
-                if (k_pos + 0 > q_pos) dst.tiles[i][j].data[ii*2].x = kittens::base_types::constants<float>::neg_infty();
-                if (k_pos + 1 > q_pos) dst.tiles[i][j].data[ii*2].y = kittens::base_types::constants<float>::neg_infty();
-                if (k_pos + 2 > q_pos) dst.tiles[i][j].data[ii*2 + 1].x = kittens::base_types::constants<float>::neg_infty();
-                if (k_pos + 3 > q_pos) dst.tiles[i][j].data[ii*2 + 1].y = kittens::base_types::constants<float>::neg_infty();
-            }
-        }
-    }
-}
-
-// template<ducks::rt::accumulator_col_layout RT>
-// __device__ inline static void mask_kv_tile(
-//     RT &dst,
-//     const int q_abs,
-//     const int k_abs
-// ) {
-//     const int lane = laneid();
-//     const int col = lane & 31;
-//     const int q_pos = q_abs * Q_BLOCK_SIZE + col;
-
-//     const float neg_inf = kittens::base_types::constants<float>::neg_infty();
-
-//     #pragma unroll
-//     for (int i = 0; i < dst.height; ++i) {
-//         #pragma unroll
-//         for (int j = 0; j < dst.width; ++j) {
-//             #pragma unroll
-//             for (int ii = 0; ii < 4; ++ii) {
-//                 const int base_row = (i * 32 + ii * 8 + ((lane >> 5) << 2));
-//                 const int k_pos = k_abs * KV_BLOCK_SIZE + base_row;
-                
-//                 int k_pos_0 = k_pos;
-//                 int k_pos_1 = k_pos + 1;
-//                 int k_pos_2 = k_pos + 2;
-//                 int k_pos_3 = k_pos + 3;
-                
-//                 // Element 0: if k_pos_0 > q_pos then neg_inf else original
-//                 {
-//                     float result;
-//                     asm volatile(
-//                         "v_cmp_gt_i32 vcc, %1, %2\n\t"
-//                         "v_cndmask_b32 %0, %3, %4, vcc"
-//                         : "=v"(result)
-//                         : "v"(k_pos_0), "v"(q_pos), "v"(dst.tiles[i][j].data[ii*2].x), "v"(neg_inf)
-//                         : "vcc"
-//                     );
-//                     dst.tiles[i][j].data[ii*2].x = result;
-//                 }
-                
-//                 // Element 1
-//                 {
-//                     float result;
-//                     asm volatile(
-//                         "v_cmp_gt_i32 vcc, %1, %2\n\t"
-//                         "v_cndmask_b32 %0, %3, %4, vcc"
-//                         : "=v"(result)
-//                         : "v"(k_pos_1), "v"(q_pos), "v"(dst.tiles[i][j].data[ii*2].y), "v"(neg_inf)
-//                         : "vcc"
-//                     );
-//                     dst.tiles[i][j].data[ii*2].y = result;
-//                 }
-                
-//                 // Element 2
-//                 {
-//                     float result;
-//                     asm volatile(
-//                         "v_cmp_gt_i32 vcc, %1, %2\n\t"
-//                         "v_cndmask_b32 %0, %3, %4, vcc"
-//                         : "=v"(result)
-//                         : "v"(k_pos_2), "v"(q_pos), "v"(dst.tiles[i][j].data[ii*2 + 1].x), "v"(neg_inf)
-//                         : "vcc"
-//                     );
-//                     dst.tiles[i][j].data[ii*2 + 1].x = result;
-//                 }
-                
-//                 // Element 3
-//                 {
-//                     float result;
-//                     asm volatile(
-//                         "v_cmp_gt_i32 vcc, %1, %2\n\t"
-//                         "v_cndmask_b32 %0, %3, %4, vcc"
-//                         : "=v"(result)
-//                         : "v"(k_pos_3), "v"(q_pos), "v"(dst.tiles[i][j].data[ii*2 + 1].y), "v"(neg_inf)
-//                         : "vcc"
-//                     );
-//                     dst.tiles[i][j].data[ii*2 + 1].y = result;
-//                 }
-//             }
-//         }
-//     }
-// }
-
-template<ducks::rt::accumulator_col_layout RT>
 __device__ inline static void mask_kv_tile(
     RT &dst,
     const int q_abs,
@@ -160,46 +51,26 @@ __device__ inline static void mask_kv_tile(
                 int k_pos_1 = k_abs * KV_BLOCK_SIZE + base_row + 1;
                 int k_pos_2 = k_abs * KV_BLOCK_SIZE + base_row + 2;
                 int k_pos_3 = k_abs * KV_BLOCK_SIZE + base_row + 3;
-                
-                // Process elements 0 and 1 together
-                {
-                    float result0, result1;
-                    asm volatile(
-                        "v_cmp_gt_i32_e64 s[68:69], %2, %6\n\t"
-                        "v_cmp_gt_i32_e64 s[70:71], %3, %6\n\t"
-                        "v_cndmask_b32_e64 %0, %4, %7, s[68:69]\n\t"
-                        "v_cndmask_b32_e64 %1, %5, %7, s[70:71]"
-                        : "=v"(result0), "=v"(result1)
-                        : "v"(k_pos_0), "v"(k_pos_1),
-                          "v"(dst.tiles[i][j].data[ii*2].x),     // %4 - input for element 0
-                          "v"(dst.tiles[i][j].data[ii*2].y),     // %5 - input for element 1
-                          "v"(q_pos),                             // %6
-                          "v"(neg_inf)                            // %7
-                        : "s68", "s69", "s70", "s71"
-                    );
-                    dst.tiles[i][j].data[ii*2].x = result0;
-                    dst.tiles[i][j].data[ii*2].y = result1;
-                }
-                
-                // Process elements 2 and 3 together
-                {
-                    float result2, result3;
-                    asm volatile(
-                        "v_cmp_gt_i32_e64 s[68:69], %2, %6\n\t"
-                        "v_cmp_gt_i32_e64 s[70:71], %3, %6\n\t"
-                        "v_cndmask_b32_e64 %0, %4, %7, s[68:69]\n\t"
-                        "v_cndmask_b32_e64 %1, %5, %7, s[70:71]"
-                        : "=v"(result2), "=v"(result3)
-                        : "v"(k_pos_2), "v"(k_pos_3),
-                          "v"(dst.tiles[i][j].data[ii*2 + 1].x), // %4 - input for element 2
-                          "v"(dst.tiles[i][j].data[ii*2 + 1].y), // %5 - input for element 3
-                          "v"(q_pos),                             // %6
-                          "v"(neg_inf)                            // %7
-                        : "s68", "s69", "s70", "s71"
-                    );
-                    dst.tiles[i][j].data[ii*2 + 1].x = result2;
-                    dst.tiles[i][j].data[ii*2 + 1].y = result3;
-                }
+
+                asm volatile(
+                    "v_cmp_lt_i32_e64 s[68:69], %8, %4\n\t"
+                    "v_cmp_lt_i32_e64 s[70:71], %8, %5\n\t"
+                    "v_cndmask_b32_e64 %0, %9, %13, s[68:69]\n\t"
+                    "v_cndmask_b32_e64 %1, %10, %13, s[70:71]\n\t"
+                    "v_cmp_lt_i32_e64 s[68:69], %8, %6\n\t"
+                    "v_cmp_lt_i32_e64 s[70:71], %8, %7\n\t"
+                    "v_cndmask_b32_e64 %2, %11, %13, s[68:69]\n\t"
+                    "v_cndmask_b32_e64 %3, %12, %13, s[70:71]"
+                    : "=v"(dst.tiles[i][j].data[ii*2].x), "=v"(dst.tiles[i][j].data[ii*2].y), "=v"(dst.tiles[i][j].data[ii*2 + 1].x), "=v"(dst.tiles[i][j].data[ii*2 + 1].y)
+                    : "v"(k_pos_0), "v"(k_pos_1), "v"(k_pos_2), "v"(k_pos_3),  // %4-7
+                      "v"(q_pos),                                                 // %8
+                      "v"(dst.tiles[i][j].data[ii*2].x),                         // %9
+                      "v"(dst.tiles[i][j].data[ii*2].y),                         // %10
+                      "v"(dst.tiles[i][j].data[ii*2 + 1].x),                     // %11
+                      "v"(dst.tiles[i][j].data[ii*2 + 1].y),                     // %12
+                      "v"(neg_inf)                                                // %13
+                    : "s68", "s69", "s70", "s71"
+                );
             }
         }
     }
@@ -240,7 +111,7 @@ __global__ void attend_ker(const attn_globals<D> g) {
     const int max_tile_idx = block_tile_idx * NUM_WARPS + NUM_WARPS - 1;
     const int max_q_end_pos = (max_tile_idx + 1) * Q_BLOCK_SIZE;
     int max_num_tiles = (max_q_end_pos + KV_BLOCK_SIZE - 1) / KV_BLOCK_SIZE;
-    max_num_tiles = min(max_num_tiles + 1, num_tiles);
+    max_num_tiles = min(max_num_tiles, num_tiles);
 
     constexpr float TEMPERATURE_SCALE = (D == 128) ? 0.08838834764f*1.44269504089f : 0.125f*1.44269504089f;
 
@@ -268,38 +139,33 @@ __global__ void attend_ker(const attn_globals<D> g) {
     zero(o_reg);
     zero(norm_vec);
     neg_infty(max_vec_prev); 
+    qo_tile<D, float> q_reg_fl;
+    load<1, qo_tile<D, float>, _gl_QKVO>(q_reg_fl, g.Qg, {batch_idx, tile_idx, head_idx, 0});
     G::load<1, false>(k_smem[0], g.Kg, {batch_idx, 0, head_idx_kv, 0}, swizzled_offsets_K);
-    // __builtin_amdgcn_s_waitcnt(0);
-    asm volatile("s_waitcnt vmcnt(4)");
+    __builtin_amdgcn_s_waitcnt(0);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
 
-    {
-        qo_tile<D, float> q_reg_fl;
-        load<1, qo_tile<D, float>, _gl_QKVO>(q_reg_fl, g.Qg, {batch_idx, tile_idx, head_idx, 0});
-        mul(q_reg_fl, q_reg_fl, TEMPERATURE_SCALE);
-        copy(q_reg, q_reg_fl);
-    }
-    swap_layout_and_transpose(q_reg_transposed, q_reg);
-
-    // All warps collaboratively load K1 and V0
-    G::load<1, false>(k_smem[1], g.Kg, {batch_idx, 1, head_idx_kv, 0}, swizzled_offsets_K);
-    G::load<1, false>(v_smem[0], g.Vg, {batch_idx, 0, head_idx_kv, 0}, swizzled_offsets_V);
     load(k_reg, k_smem[0], lane_offs);
     k_idx_buf1 = 1; 
     k_curr_idx = 0; 
-    // __builtin_amdgcn_s_waitcnt(0);
-    asm volatile("s_waitcnt vmcnt(4)");
+    asm volatile("s_waitcnt lgkmcnt(0)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
 
     // Process first tile always
     zero(att_block[0]);
+    mul(q_reg_fl, q_reg_fl, TEMPERATURE_SCALE);
+    copy(q_reg, q_reg_fl);
+    swap_layout_and_transpose(q_reg_transposed, q_reg);
     swap_layout_and_transpose(k_reg_transposed, k_reg);
+    G::load<1, false>(k_smem[1], g.Kg, {batch_idx, 1, head_idx_kv, 0}, swizzled_offsets_K);
     mma_AtB(att_block[0], k_reg_transposed, q_reg_transposed, att_block[0]);
     __builtin_amdgcn_s_setprio(1);
     if constexpr (causal) mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
     __builtin_amdgcn_s_setprio(0);
+
+    G::load<1, false>(v_smem[0], g.Vg, {batch_idx, 0, head_idx_kv, 0}, swizzled_offsets_V);
     col_max(max_vec, att_block[0]);
     sub_col(att_block[0], att_block[0], max_vec);
     exp2(att_block[0], att_block[0]);
@@ -310,20 +176,23 @@ __global__ void attend_ker(const attn_globals<D> g) {
     }
 
     // Load K1 and prepare for next iteration
+    zero(att_block[1]);
     load(k_reg, k_smem[1], lane_offs);
-    k_curr_idx = 1; 
-    G::load<1, false>(k_smem[0], g.Kg, {batch_idx, 2, head_idx_kv, 0}, swizzled_offsets_K);
-    k_idx_buf0 = 2; 
+    G::load<1, false>(k_smem[0], g.Kg, {batch_idx, 2, head_idx_kv, 0}, swizzled_offsets_K); 
     G::load<1, false>(v_smem[1], g.Vg, {batch_idx, 1, head_idx_kv, 0}, swizzled_offsets_V);
-    __builtin_amdgcn_s_waitcnt(0);
+    k_curr_idx = 1; 
+    k_idx_buf0 = 2;
+    // __builtin_amdgcn_s_waitcnt(0);
+    asm volatile("s_waitcnt lgkmcnt(0)");
+    asm volatile("s_waitcnt vmcnt(12)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
+    __builtin_amdgcn_sched_barrier(0);
 
     // hot loop
     // #pragma unroll  // for some reason unroll makes it slower
     for (int j = 3; j < max_num_tiles - 1; j += 2) {
         // Cluster 0: QK1
-        zero(att_block[1]);
         swap_layout_and_transpose(k_reg_transposed, k_reg);
         mma_AtB(att_block[1], k_reg_transposed, q_reg_transposed, att_block[1]);
         sub(max_vec_prev, max_vec_prev, max_vec); 
@@ -386,9 +255,7 @@ __global__ void attend_ker(const attn_globals<D> g) {
         __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 5: Loads
-        __builtin_amdgcn_s_setprio(1);
         if constexpr (causal) mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
-        __builtin_amdgcn_s_setprio(0);
         G::load<1, false>(k_smem[0], g.Kg, {batch_idx, j + 1, head_idx_kv, 0}, swizzled_offsets_K);
         k_idx_buf0 = j + 1;
         load(v_reg, v_smem[1]);
@@ -412,6 +279,7 @@ __global__ void attend_ker(const attn_globals<D> g) {
         __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 7: Loads
+        zero(att_block[1]);
         G::load<1, false>(v_smem[1], g.Vg, {batch_idx, j, head_idx_kv, 0}, swizzled_offsets_V);
         load(k_reg, k_smem[1], lane_offs);
         k_curr_idx = k_idx_buf1;
@@ -631,3 +499,4 @@ PYBIND11_MODULE(tk_fwd_causal_kernel, m) {
         &attn_globals<ATTN_D>::L_vec
     );
 }
+

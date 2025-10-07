@@ -12,16 +12,17 @@ torch.set_printoptions(
 )
 
 # Inputs
-B = 8
-H = 16
+B = 16
+H = 64
 H_KV = 8
-N = 2048
+N = 8192
 D = 128
 causal = True
 dtype = torch.bfloat16
 
-num_warmup = 100
-num_iters = 100
+num_warmup = 50
+num_iters = 60
+
 
 def flops(batch, seqlen, nheads, headdim, causal, mode="fwd"):
     """Calculate FLOPs for attention operation."""
@@ -35,8 +36,8 @@ def efficiency(flop, time):
     return flop / time
 
 def robustness_check(ref, pred):
-    ref = ref.float()
-    pred = pred.float()
+    ref = ref#.float()
+    pred = pred#.float()
     diff = (ref - pred).abs()
     denom = ref.abs().clamp_min(1e-6)
     mask = (diff > (0.001 + 0.05 * denom))
@@ -109,15 +110,15 @@ print(f"Average execution time: {avg_time:.4f} ms")
 print(f"Performance: {eff:.2f} TFLOPS for {N}x{N} matrix multiplication.\n")
 
 # Compare against reference
-# num_print = 8
-# print(f"TK vs AITER comparison:")
-# print("\nO outputs:")
-# print("TK: ", out[0, 0, :num_print, 0], "Max:", out.max().item())
-# print("AITER: ", out_ref[0, 0, :num_print, 0], "Max:", out_ref.max().item())
+num_print = 8
+print(f"TK vs AITER comparison:")
+print("\nO outputs:")
+print("TK: ", out[0, 0, :num_print, 0], "Max:", out.max().item())
+print("AITER: ", out_ref[0, 0, :num_print, 0], "Max:", out_ref.max().item())
 
-# print("\nLSE outputs:")
-# print("TK: ", lse[0, 0, 0, :num_print], "Max:", lse.max().item())
-# print("AITER: ", lse_ref[0, 0, :num_print], "Max:", lse_ref.max().item())
+print("\nLSE outputs:")
+print("TK: ", lse[0, 0, 0, :num_print], "Max:", lse.max().item())
+print("AITER: ", lse_ref[0, 0, :num_print], "Max:", lse_ref.max().item())
 
 print("\nRobustness check:")
 o_diff, o_err_cnt, o_total, o_rel_error, o_l2_error, o_cos, o_mask = robustness_check(out, out_ref)
@@ -133,18 +134,18 @@ print(f"LSE: max_abs={l_diff.max().item():.6f}, max_rel={l_rel_error:.4f}, "
 # O-DIFFs
 
 
-warp_0_diff = o_diff[:, :512, :, 0:]
-print(f"Warp 0 diff: {warp_0_diff.max().item():.6f}")
+# warp_0_diff = o_diff[:, :512, :, 0:]
+# print(f"Warp 0 diff: {warp_0_diff.max().item():.6f}")
 
-warp_1_diff = o_diff[:, 512:1024, :, 0:]
-print(f"Warp 1 diff: {warp_1_diff.max().item():.6f}")
+# warp_1_diff = o_diff[:, 512:1024, :, 0:]
+# print(f"Warp 1 diff: {warp_1_diff.max().item():.6f}")
 
 
-warp_2_diff = o_diff[:, 1024:1536, :, 0:]
-print(f"Warp 2 diff: {warp_2_diff.max().item():.6f}")
+# warp_2_diff = o_diff[:, 1024:1536, :, 0:]
+# print(f"Warp 2 diff: {warp_2_diff.max().item():.6f}")
 
-warp_3_diff = o_diff[:, 1536:2048, :, 0:]
-print(f"Warp 3 diff: {warp_3_diff.max().item():.6f}")
+# warp_3_diff = o_diff[:, 1536:2048, :, 0:]
+# print(f"Warp 3 diff: {warp_3_diff.max().item():.6f}")
 
 # warp_0_diff = o_diff[:, :32, :, 0:]
 # print(f"Warp 0 diff: {warp_0_diff.max().item():.6f}")
