@@ -27,12 +27,6 @@ template<int D, typename T=float, typename L=accum_col_l> using attn_tile = rt<T
 
 /**********************************************************/
 
-template <class T>
-__device__ inline uint32_t& as_u32_ref(T& v) {
-    // reinterpret an lvalue (float, bf16-packed, etc.) as a 32-bit lane
-    return *reinterpret_cast<uint32_t*>(&v);
-}
-
 template<int THR_X, int THR_Y>
 __device__ inline void mask_vec2_imm(uint32_t rel_vgpr, uint32_t neg_inf_vgpr,
                                      uint32_t& x_ref, uint32_t& y_ref) {
@@ -170,6 +164,8 @@ __global__ void attend_ker(const attn_globals<D> g) {
     int max_num_tiles = (max_q_end_pos + KV_BLOCK_SIZE - 1) / KV_BLOCK_SIZE;
     if constexpr (causal) max_num_tiles = min(max_num_tiles, num_tiles);
     else max_num_tiles = num_tiles;
+    const int q_start_pos = tile_idx * Q_BLOCK_SIZE;
+    const int q_start_pos_s = __builtin_amdgcn_readfirstlane(q_start_pos);
 
     constexpr float TEMPERATURE_SCALE = (D == 128) ? 0.08838834764f*1.44269504089f : 0.125f*1.44269504089f;
 
@@ -226,7 +222,13 @@ __global__ void attend_ker(const attn_globals<D> g) {
     swap_layout_and_transpose(k_reg_transposed, k_reg);
     mma_AtB(att_block[0], k_reg_transposed, q_reg_transposed, att_block[0]);
     __builtin_amdgcn_s_setprio(1);
-    if constexpr (causal) mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
+    if constexpr (causal) { 
+        const int kv_end_pos = (k_curr_idx + 1) * KV_BLOCK_SIZE;
+        const int kv_end_pos_s = __builtin_amdgcn_readfirstlane(kv_end_pos);
+        if (__builtin_expect(q_start_pos_s < kv_end_pos_s, 0)) {  // Only mask if needed
+            mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
+        }
+    }
     __builtin_amdgcn_s_setprio(0);
 
     // Each warp performs a partial softmax of QK0 (i.e. some of the online softmax up until but not including the second exponentialscaling of the attention block likely)
@@ -269,7 +271,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
         __builtin_amdgcn_s_setprio(0);
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 1: ALL warps must participate in collective loads
         // Load K(j) if in bounds, otherwise repeat a safe index
@@ -280,23 +281,26 @@ __global__ void attend_ker(const attn_globals<D> g) {
         asm volatile("s_waitcnt vmcnt(4)");
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 2: A0V0
         __builtin_amdgcn_s_setprio(1);
         mul_col(o_reg, o_reg, max_vec_prev);
         mma_AtB(o_reg, v_reg, att_block_bf16, o_reg);
         //      Partial softmax for QK1
-        if constexpr (causal) mask_kv_tile(att_block[1], tile_idx, k_curr_idx);
+        if constexpr (causal) {
+            const int kv_end_pos = (k_curr_idx + 1) * KV_BLOCK_SIZE;
+            const int kv_end_pos_s = __builtin_amdgcn_readfirstlane(kv_end_pos);
+            if (__builtin_expect(q_start_pos_s < kv_end_pos_s, 0)) {  // Only mask if needed
+                mask_kv_tile(att_block[1], tile_idx, k_curr_idx);
+            }
+        }
         copy(max_vec_prev, max_vec);
         col_max(max_vec, att_block[1], max_vec);
         sub_col(att_block[1], att_block[1], max_vec);
         exp2(att_block[1], att_block[1]);
-        // exp_first_half_k(att_block[1], att_block[1]);
         __builtin_amdgcn_s_setprio(0);
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 3: Loads
         //      Load K2 into registers
@@ -308,7 +312,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
         asm volatile("s_waitcnt vmcnt(4)");
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 4: QK2
         __builtin_amdgcn_s_setprio(1);
@@ -320,11 +323,11 @@ __global__ void attend_ker(const attn_globals<D> g) {
         exp2(max_vec_prev, max_vec_prev);  
         mul(norm_vec, norm_vec, max_vec_prev);
         col_sum(norm_vec, att_block[1], norm_vec);
+        mul_col(o_reg, o_reg, max_vec_prev);
         copy(att_block_bf16, att_block[1]);
         __builtin_amdgcn_s_setprio(0);
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 5: Loads
         //      Load V1 into registers
@@ -336,14 +339,18 @@ __global__ void attend_ker(const attn_globals<D> g) {
         asm volatile("s_waitcnt vmcnt(4)");
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 6: A1V1
         __builtin_amdgcn_s_setprio(1);
-        mul_col(o_reg, o_reg, max_vec_prev);
         mma_AtB(o_reg, v_reg, att_block_bf16, o_reg);
         //      Partial softmax for QK2
-        if constexpr (causal) mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
+        if constexpr (causal) {
+            const int kv_end_pos = (k_curr_idx + 1) * KV_BLOCK_SIZE;
+            const int kv_end_pos_s = __builtin_amdgcn_readfirstlane(kv_end_pos);
+            if (__builtin_expect(q_start_pos_s < kv_end_pos_s, 0)) {  // Only mask if needed
+                mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
+            }
+        }
         copy(max_vec_prev, max_vec);
         col_max(max_vec, att_block[0], max_vec);
         sub_col(att_block[0], att_block[0], max_vec);
@@ -352,7 +359,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
         __builtin_amdgcn_s_setprio(0);
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     
         // Cluster 7: Loads
         //      Load K3 into registers
@@ -365,7 +371,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
         asm volatile("s_waitcnt vmcnt(4)");
         __builtin_amdgcn_sched_barrier(0);
         __builtin_amdgcn_s_barrier();
-        __builtin_amdgcn_sched_barrier(0);
     }
 
     // Epilogue
@@ -383,11 +388,9 @@ __global__ void attend_ker(const attn_globals<D> g) {
     copy(att_block_bf16, att_block[0]);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 1:
     //      Load K5 into shared
-    if constexpr (causal) mask_kv_tile(att_block[1], tile_idx, k_curr_idx);
     G::load<1, false>(k_smem[1], g.Kg, {batch_idx, max_num_tiles - 1, head_idx_kv, 0}, swizzled_offsets_K, (uint32_t)ks0, (uint32_t)ks1, (uint32_t)ks2, (uint32_t)ks3, k_base);
     k_idx_buf1 = max_num_tiles - 1;
     //      Load V2 into registers
@@ -396,12 +399,18 @@ __global__ void attend_ker(const attn_globals<D> g) {
     asm volatile("s_waitcnt vmcnt(4)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 2:
     //      A2V2
     __builtin_amdgcn_s_setprio(1);
     mma_AtB(o_reg, v_reg, att_block_bf16, o_reg);
+    if constexpr (causal) {
+        const int kv_end_pos = (k_curr_idx + 1) * KV_BLOCK_SIZE;
+        const int kv_end_pos_s = __builtin_amdgcn_readfirstlane(kv_end_pos);
+        if (__builtin_expect(q_start_pos_s < kv_end_pos_s, 0)) {  // Only mask if needed
+            mask_kv_tile(att_block[1], tile_idx, k_curr_idx);
+        }
+    }
     //      Partial softmax for QK3
     copy(max_vec_prev, max_vec);
     col_max(max_vec, att_block[1], max_vec);
@@ -410,11 +419,10 @@ __global__ void attend_ker(const attn_globals<D> g) {
     __builtin_amdgcn_s_setprio(0);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 3:
     //      Load V4 into shared
-    G::load<1, false>(v_smem[0], g.Vg, {batch_idx, max_num_tiles - 2, head_idx_kv, 0}, swizzled_offsets_V, (uint32_t)vs0, (uint32_t)vs1, (uint32_t)ks2, (uint32_t)ks3, v_base);
+    G::load<1, false>(v_smem[0], g.Vg, {batch_idx, max_num_tiles - 2, head_idx_kv, 0}, swizzled_offsets_V, (uint32_t)vs0, (uint32_t)vs1, (uint32_t)vs2, (uint32_t)vs3, v_base);
     //      Load K4 into registers
     load(k_reg, k_smem[0], lane_offs);
     k_curr_idx = k_idx_buf0;
@@ -422,7 +430,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
     asm volatile("s_waitcnt vmcnt(4)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 4:
     //      QK4
@@ -437,24 +444,26 @@ __global__ void attend_ker(const attn_globals<D> g) {
     copy(att_block_bf16, att_block[1]);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 5:
     //      Load V3 into registers
     load(v_reg, v_smem[1]);
-    __builtin_amdgcn_s_setprio(1);
-    if constexpr (causal) mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
-    __builtin_amdgcn_s_setprio(0);
     asm volatile("s_waitcnt lgkmcnt(0)");
     asm volatile("s_waitcnt vmcnt(2)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 6:
     //      A3V3
     mul_col(o_reg, o_reg, max_vec_prev);
     mma_AtB(o_reg, v_reg, att_block_bf16, o_reg);
+    if constexpr (causal) {
+        const int kv_end_pos = (k_curr_idx + 1) * KV_BLOCK_SIZE;
+        const int kv_end_pos_s = __builtin_amdgcn_readfirstlane(kv_end_pos);
+        if (__builtin_expect(q_start_pos_s < kv_end_pos_s, 0)) {  // Only mask if needed
+            mask_kv_tile(att_block[0], tile_idx, k_curr_idx);
+        }
+    }
     //      Partial softmax for QK4
     copy(max_vec_prev, max_vec);
     col_max(max_vec, att_block[0], max_vec);
@@ -462,7 +471,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
     exp2(att_block[0], att_block[0]);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 7:
     //      Load V5 into shared
@@ -474,7 +482,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
     asm volatile("s_waitcnt vmcnt(2)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 8:
     //      QK5
@@ -486,27 +493,29 @@ __global__ void attend_ker(const attn_globals<D> g) {
     exp2(max_vec_prev, max_vec_prev); 
     mul(norm_vec, norm_vec, max_vec_prev);
     col_sum(norm_vec, att_block[0], norm_vec);
+    mul_col(o_reg, o_reg, max_vec_prev);
     copy(att_block_bf16, att_block[0]);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 9:
     //      Load V4 into registers
     load(v_reg, v_smem[0]);
-    __builtin_amdgcn_s_setprio(1);
-    if constexpr (causal) mask_kv_tile(att_block[1], tile_idx, k_curr_idx);
-    __builtin_amdgcn_s_setprio(0);
     asm volatile("s_waitcnt lgkmcnt(0)");
     asm volatile("s_waitcnt vmcnt(0)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 10:
     //      A4V4
-    mul_col(o_reg, o_reg, max_vec_prev);
     mma_AtB(o_reg, v_reg, att_block_bf16, o_reg);
+    if constexpr (causal) {
+        const int kv_end_pos = (k_curr_idx + 1) * KV_BLOCK_SIZE;
+        const int kv_end_pos_s = __builtin_amdgcn_readfirstlane(kv_end_pos);
+        if (__builtin_expect(q_start_pos_s < kv_end_pos_s, 0)) {  // Only mask if needed
+            mask_kv_tile(att_block[1], tile_idx, k_curr_idx);
+        }
+    }
     //      Full softmax for QK5
     copy(max_vec_prev, max_vec);
     col_max(max_vec, att_block[1], max_vec);
@@ -519,7 +528,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
     copy(att_block_bf16, att_block[1]);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
 
     // Cluster 11:
     //      Load V5 into registers
@@ -527,12 +535,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
     asm volatile("s_waitcnt lgkmcnt(0)");
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
-
-    // Conclusion
-    if (!stagger) {
-        __builtin_amdgcn_s_barrier();
-    }
 
     // Cluster 12:
     //      A5V5
@@ -541,7 +543,12 @@ __global__ void attend_ker(const attn_globals<D> g) {
     div_col(o_reg, o_reg, norm_vec);
     __builtin_amdgcn_sched_barrier(0);
     __builtin_amdgcn_s_barrier();
-    __builtin_amdgcn_sched_barrier(0);
+
+    // Conclusion
+    if (!stagger) {
+        __builtin_amdgcn_sched_barrier(0);
+        __builtin_amdgcn_s_barrier();
+    }
 
     qo_tile<D, float, accum_row_l> o_reg_transposed;
     swap_layout_and_transpose(o_reg_transposed, o_reg);
@@ -554,7 +561,6 @@ __global__ void attend_ker(const attn_globals<D> g) {
     store(g.L_vec, norm_vec, {batch_idx, head_idx, 0, tile_idx});
 
 }
-
 
 template<int D>
 void dispatch_fwd(attn_globals<D> g) {
