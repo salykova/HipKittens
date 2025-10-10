@@ -57,7 +57,7 @@ __global__ void attend_ker(const attn_globals<D> g) {
     extern __shared__ alignment_dummy __shm[];
     shared_allocator al((int*)&__shm[0]);
     st_bf<KV_BLOCK_SIZE, ATTN_D, st_32x32_s> (&k_smem)[2] = al.allocate<st_bf<KV_BLOCK_SIZE, ATTN_D, st_32x32_s>, 2>();
-    st_bf<KV_BLOCK_SIZE, ATTN_D, st_32x32_s> (&v_smem)[2] = al.allocate<st_bf<KV_BLOCK_SIZE, ATTN_D, st_32x32_s>, 2>();
+    st_bf<KV_BLOCK_SIZE, ATTN_D, st_8x32_s> (&v_smem)[2] = al.allocate<st_bf<KV_BLOCK_SIZE, ATTN_D, st_8x32_s>, 2>();
     
     const int head_idx = (blockIdx.x % 8) * 8 + (blockIdx.x / 8);
     // const int head_idx = blockIdx.x;
