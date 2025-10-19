@@ -1,7 +1,7 @@
 #include "kittens.cuh"
 #include "pyutils/pyutils.cuh"
 
-constexpr int ATTN_B = 16; // batch size
+constexpr int ATTN_B = 15; // batch size
 constexpr int ATTN_H = 64; // number of heads
 constexpr int ATTN_H_KV = 8; // number of heads for key and value
 constexpr int GROUP_SIZE = ATTN_H / ATTN_H_KV;

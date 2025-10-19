@@ -30,6 +30,10 @@ N = int(sys.argv[1]) if len(sys.argv) > 1 else 1024
 causal = int(sys.argv[4]) if len(sys.argv) > 4 else 0
 filename = sys.argv[5]
 dtype = torch.bfloat16
+
+if (N == 16384):
+    B = 15
+
 q = torch.randn(B, N, H, D, dtype=dtype, device='cuda', requires_grad=True)
 k = torch.randn(B, N, H_KV, D, dtype=dtype, device='cuda', requires_grad=True)
 v = torch.randn(B, N, H_KV, D, dtype=dtype, device='cuda', requires_grad=True)
@@ -184,6 +188,6 @@ if profiling:
 
     print(f"Results saved to {filename}")
 
-    ############### END LOGGING OUTPUTS ###############
+    ############## END LOGGING OUTPUTS ###############
 
     

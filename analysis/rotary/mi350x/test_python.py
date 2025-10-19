@@ -3,6 +3,7 @@ import torch.nn as nn
 from tqdm import trange
 import numpy as np
 import sys
+import os
 import math
 from einops import rearrange, repeat
 import tk_kernel
@@ -11,6 +12,7 @@ B = 16
 H = 16
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 1024
 D = 128
+filename = sys.argv[2]
 
 D_2 = D // 2
 
@@ -59,12 +61,8 @@ start_event = torch.cuda.Event(enable_timing=True) # in milliseconds
 end_event = torch.cuda.Event(enable_timing=True)
 flops_ref = flops(B, N, D)
 
-if profiling:
-    num_warmup = 500
-    num_iters = 100
-else:
-    num_warmup = 1
-    num_iters = 0
+num_warmup = 500
+num_iters = 100
 
 
 cos_in, sin_in, ro_dim = get_cos_sin(x)
@@ -84,9 +82,9 @@ for _ in range(num_iters):
     elapsed_time = start_event.elapsed_time(end_event)
     timings.append(elapsed_time)
 avg_time_ref = sum(timings) / len(timings)
-eff = efficiency(flops_ref, avg_time_ref)
+eff_ref = efficiency(flops_ref, avg_time_ref)
 print(f"PyTorch average execution time: {avg_time_ref:.4f} ms")
-print(f"PyTorch performance: {eff:.2f} TFLOPS for {B=} {N=} {D=}.")
+print(f"PyTorch performance: {eff_ref:.2f} TFLOPS for {B=} {N=} {D=}.")
 
 #  PyTorch (Compiled)
 compiled_pytorch_ref = torch.compile(get_output)
@@ -161,11 +159,11 @@ for _ in range(num_iters):
     torch.cuda.synchronize()
     elapsed_time = start_event.elapsed_time(end_event)
     timings.append(elapsed_time)
-avg_time = sum(timings) / len(timings)
-eff = efficiency(flops_ref, avg_time)
-print(f"TK average execution time: {avg_time:.4f} ms")
-print(f"TK performance: {eff:.2f} TFLOPS for {B=} {N=} {D=}.")
-speedup = avg_time_ref / avg_time
+avg_time_tk = sum(timings) / len(timings)
+eff_tk = efficiency(flops_ref, avg_time_tk)
+print(f"TK average execution time: {avg_time_tk:.4f} ms")
+print(f"TK performance: {eff_tk:.2f} TFLOPS for {B=} {N=} {D=}.")
+speedup = avg_time_ref / avg_time_tk
 print(f"Speedup from TK: {speedup:.2f}x")
 
 # Correctness
@@ -176,9 +174,8 @@ max_diff = o_diff.abs().max().item()
 print("max_diff: ", max_diff)
 
 
-max_error = o_diff.max().item()
-mean_error = o_diff.mean().item()
-error_count = o_err_cnt
+max_error = o_diff.abs().max().item()
+mean_error = o_diff.abs().mean().item()
 data_to_log = {
     "N": N,
     "avg_time_pytorch": avg_time_ref,
@@ -187,12 +184,10 @@ data_to_log = {
     "tflops_pytorch_compiled": eff_compiled,
     "avg_time_aiter": avg_time_aiter,
     "tflops_aiter": eff_aiter,
-    "avg_time_tk": avg_time,
-    "tflops_tk": eff,
-    "tflops": eff,
+    "avg_time_tk": avg_time_tk,
+    "tflops_tk": eff_tk,
     "max_error": max_error,
     "mean_error": mean_error,
-    "error_count": error_count,
 }
 import json
 if not os.path.exists(filename):

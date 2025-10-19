@@ -102,7 +102,20 @@ mi355x_mha_baselines_non_causal = {
     }
 }
 
-colors = ["#8E69B8", "#E59952", "#68AC5A", "#7CB9BC"]
+colors = ["#8E69B8", "#E59952", "#68AC5A", "#7CB9BC", "#DE836B"]
+
+
+def process_data(data_list):
+    """Separate numeric values and OOM indices"""
+    values = []
+    oom_indices = []
+    for i, val in enumerate(data_list):
+        if val == "OOM":
+            values.append(0)  # Use 0 for bar height
+            oom_indices.append(i)
+        else:
+            values.append(val)
+    return values, oom_indices
 
 
 for device in ['mi300x', 'mi325x', 'mi350x', 'mi355x']:
@@ -142,21 +155,45 @@ for device in ['mi300x', 'mi325x', 'mi350x', 'mi355x']:
             torch_tflops = [mi355x_gqa_baselines_non_causal['torch'][str(size)] for size in matrix_sizes]
             ck_tflops = [mi355x_gqa_baselines_non_causal['ck'][str(size)] for size in matrix_sizes]
 
+        # Process data to separate OOM values
+        triton_vals, triton_oom = process_data(triton_tflops) if triton_tflops else ([], [])
+        torch_vals, torch_oom = process_data(torch_tflops) if torch_tflops else ([], [])
+        ck_vals, ck_oom = process_data(ck_tflops) if ck_tflops else ([], [])
+
+        # Calculate max for numeric values only
+        numeric_vals = aiter_tflops + tk_tflops
+        if triton_vals:
+            numeric_vals.extend([v for v in triton_vals if v != 0])
+        if torch_vals:
+            numeric_vals.extend([v for v in torch_vals if v != 0])
+        if ck_vals:
+            numeric_vals.extend([v for v in ck_vals if v != 0])
+        max_tflops = max(numeric_vals) if numeric_vals else 100
+
         # Create bar chart
         x = np.arange(len(matrix_sizes))
-        width = 0.3
+        width = 0.17
 
-        fig, ax = plt.subplots(figsize=(10, 6))
-        bars0 = ax.bar(x - width, aiter_tflops, width, label='AITER (AMD)', color=colors[1])
-        bars1 = ax.bar(x, tk_tflops, width, label='ThunderKittens', color=colors[3])
-        if len(triton_tflops) > 0:
-            bars2 = ax.bar(x + width, triton_tflops, width, label='Triton', color=colors[0])
-        if len(torch_tflops) > 0:
-            bars3 = ax.bar(x + width * 2, torch_tflops, width, label='PyTorch', color=colors[2])
-        if len(ck_tflops) > 0:
-            bars4 = ax.bar(x + width * 3, ck_tflops, width, label='Composable Kernel', color=colors[4])
+        fig, ax = plt.subplots(figsize=(16, 6))
+        first_bar_start = x - 2*width
+        second_bar_start = x - width
+        third_bar_start = x
+        fourth_bar_start = x + width
+        fifth_bar_start = x + 2*width
+        bars0 = ax.bar(fourth_bar_start, aiter_tflops, width, label='AITER', color=colors[0])
+        bars1 = ax.bar(fifth_bar_start, tk_tflops, width, label='HipKittens', color=colors[3])
+        bars2 = ax.bar(second_bar_start, triton_vals, width, label='Triton', color=colors[2])
+        bars3 = ax.bar(first_bar_start, torch_vals, width, label='PyTorch SDPA', color=colors[4])
+        bars4 = ax.bar(third_bar_start, ck_vals, width, label='Composable Kernel', color=colors[1])
 
-        max_tflops = max(max(aiter_tflops), max(tk_tflops), max(triton_tflops), max(torch_tflops), max(ck_tflops))
+        # Plot X markers for OOM
+        oom_height = 50  # Position X near top of chart
+        if torch_oom:
+            for idx in torch_oom:
+                ax.plot(x[idx] -  2*width, oom_height, 'x', color=colors[4], 
+                       markersize=15, markeredgewidth=3)
+                ax.text(x[idx] -  2*width, oom_height + max_tflops * 0.03,
+                       'OOM', ha='center', va='bottom', fontsize=10, color=colors[4])
 
         # Add value labels on bars
         for bar, value in zip(bars0, aiter_tflops):
@@ -169,34 +206,36 @@ for device in ['mi300x', 'mi325x', 'mi350x', 'mi355x']:
             ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
                     f'{value:.0f}', ha='center', va='bottom', fontsize=14)
 
-        if len(triton_tflops) > 0:
-            for bar, value in zip(bars2, triton_tflops):
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
-                        f'{value:.0f}', ha='center', va='bottom', fontsize=14)
-        if len(torch_tflops) > 0:
-            for bar, value in zip(bars3, torch_tflops):
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
-                        f'{value:.0f}', ha='center', va='bottom', fontsize=14)
+        if len(triton_vals) > 0:
+            for bar, value in zip(bars2, triton_vals):
+                if value > 0:  # Only label non-OOM bars
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
+                            f'{value:.0f}', ha='center', va='bottom', fontsize=14)
+        
+        if len(torch_vals) > 0:
+            for i, (bar, value) in enumerate(zip(bars3, torch_vals)):
+                if value > 0:  # Only label non-OOM bars
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
+                            f'{value:.0f}', ha='center', va='bottom', fontsize=14)
                         
-        if len(ck_tflops) > 0:
-            for bar, value in zip(bars4, ck_tflops):
-                height = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
-                        f'{value:.0f}', ha='center', va='bottom', fontsize=14)
+        if len(ck_vals) > 0:
+            for bar, value in zip(bars4, ck_vals):
+                if value > 0:  # Only label non-OOM bars
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height + max_tflops * 0.01,
+                            f'{value:.0f}', ha='center', va='bottom', fontsize=14)
 
         # add some padding to the top of the y-axis to prevent label overlap
         ax.set_ylim(0, max_tflops * 1.15)
         ax.set_xlabel('Sequence Length (N)', fontsize=16)
         ax.set_ylabel('Performance (TFLOPS)', fontsize=16)
         ax.set_title(f'Attention Performance Comparison {device.upper()}', fontsize=16)
-        ax.set_xticks(x, fontsize=16)
-        ax.set_yticks(fontsize=16)
+        ax.set_xticks(x)
         ax.set_xticklabels(matrix_sizes, fontsize=16)
         ax.tick_params(axis='y', labelsize=16)
         ax.legend(fontsize=16)
-        # ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.show()
@@ -204,15 +243,3 @@ for device in ['mi300x', 'mi325x', 'mi350x', 'mi355x']:
         output_file = f'{device}_{setting}_attn_plot.png'
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         print(f"Plot saved to {output_file}")
-
-        # Print summary
-        print(f"Matrix sizes tested: {matrix_sizes}")
-        print(f"AITER (AMD) TFLOPS: {[f'{t:.2f}' for t in aiter_tflops]}")
-        print(f"TK TFLOPS: {[f'{t:.2f}' for t in tk_tflops]}")
-        if len(triton_tflops) > 0:
-            print(f"Triton TFLOPS: {[f'{t:.2f}' for t in triton_tflops]}")
-        if len(torch_tflops) > 0:
-            print(f"PyTorch TFLOPS: {[f'{t:.2f}' for t in torch_tflops]}")
-        if len(ck_tflops) > 0:
-            print(f"Composable Kernel TFLOPS: {[f'{t:.2f}' for t in ck_tflops]}")
-
