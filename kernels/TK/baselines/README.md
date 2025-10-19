@@ -117,12 +117,34 @@ We picked the best of these options for each dimension:
 
 ### Triton baselines
 
+First ```pip install matplotlib```.
+
 **Attention**
 
 Attention baselines for triton are taken as the best performance out of:
 - [ROCm triton perf-kernels](https://github.com/ROCm/triton/tree/76076e1d7d16a988a61a66264845990acd1244ab/python/perf-kernels) ```flash-attention.py```
 - [ROCm triton tutorials](https://github.com/ROCm/triton/tree/76076e1d7d16a988a61a66264845990acd1244ab/python/tutorials) ```06-fused-attention.py```
-We can directly run the files using python. Find these files under ```baselines/attn/triton_attention_v01.py``` and ```baselines/attn/triton_attention_v02.py```.
+
+We can directly run the files using python. Find these files under (set causality, fwd/bwd, and gqa/mha appropriately in the file). We report the best of:
+```bash
+cd baselines/attn/
+python baselines/attn/triton_attention_v01.py
+python baselines/attn/triton_attention_v02.py
+ ```
+
+
+**GEMM**
+
+We report the best of the following implementations for each dimension. These kernels are pulled from [ROCm triton perf-kernels](https://github.com/ROCm/triton/tree/76076e1d7d16a988a61a66264845990acd1244ab/python/perf-kernels) and [ROCm triton tutorials](https://github.com/ROCm/triton/tree/76076e1d7d16a988a61a66264845990acd1244ab/python/tutorials). 
+````bash
+cd baselines/attn/
+python baselines/attn/triton_gemm_v01.py
+python baselines/attn/triton_gemm_v02.py
+python baselines/attn/triton_gemm_v03.py
+ ```
+
+
+
 
 ### HipblasLT baselines
 
