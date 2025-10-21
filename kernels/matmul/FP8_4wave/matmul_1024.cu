@@ -167,7 +167,7 @@ __device__ inline static void do_interleaved_cluster(ST_GL& dst_gl, const GL_GL&
     }
 }
 
-#define BLOCK_SIZE 128
+#define BLOCK_SIZE 64
 
 template <int M, int N, int K>
 __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m3, 1, 1, M, K> A, const kittens::gl<fp8e4m3, 1, 1, N, K> B, const kittens::gl<bf16, 1, 1, M, N> C) {
@@ -256,7 +256,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
     load_gl_to_st<2, false, kittens::ducks::rt_layout::row, ST_A, kittens::gl<fp8e4m3, 1, 1, M, K>, coord<ST_A>, NUM_WARPS*WARP_THREADS>(As[next][1], A, {0, 0, block_row*WARPS_ROW+1, 1});
 
     __builtin_amdgcn_sched_barrier(0);
-    asm volatile("s_waitcnt vmcnt(28)");
+    asm volatile("s_waitcnt vmcnt(7)");
     __builtin_amdgcn_s_barrier();
     __builtin_amdgcn_sched_barrier(0);
 
@@ -264,7 +264,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
     load_st_to_rt(a[0], a_subtile_0);
 
     __builtin_amdgcn_sched_barrier(0);
-    asm volatile("s_waitcnt vmcnt(24)");
+    asm volatile("s_waitcnt vmcnt(6)");
     __builtin_amdgcn_s_barrier();
     __builtin_amdgcn_sched_barrier(0);
 
@@ -274,7 +274,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
     #pragma unroll
     for (int k = 0; k < k_iters - 2; ++k, curr ^= 1, next ^= 1) {
         __builtin_amdgcn_sched_barrier(0);
-        asm volatile("s_waitcnt vmcnt(16)");
+        asm volatile("s_waitcnt vmcnt(4)");
         asm volatile("s_waitcnt lgkmcnt(0)");
         __builtin_amdgcn_s_barrier();
         __builtin_amdgcn_sched_barrier(0);
@@ -297,7 +297,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
         mma_ABt(c[0][1], a[0], b[1], c[0][1]);
 
         __builtin_amdgcn_sched_barrier(0);
-        asm volatile("s_waitcnt vmcnt(16)");
+        asm volatile("s_waitcnt vmcnt(4)");
         asm volatile("s_waitcnt lgkmcnt(0)");
         __builtin_amdgcn_sched_barrier(0);
 
@@ -316,7 +316,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
 
     { // EPILOGUE: k = k_iters - 2
         __builtin_amdgcn_sched_barrier(0);
-        asm volatile("s_waitcnt vmcnt(16)");
+        asm volatile("s_waitcnt vmcnt(4)");
         __builtin_amdgcn_s_barrier();
         __builtin_amdgcn_sched_barrier(0);
 
@@ -343,7 +343,7 @@ __global__ __launch_bounds__(256, 1) void matmul_device(const kittens::gl<fp8e4m
         __builtin_amdgcn_sched_barrier(0);
 
         __builtin_amdgcn_sched_barrier(0);
-        asm volatile("s_waitcnt vmcnt(8)");
+        asm volatile("s_waitcnt vmcnt(2)");
         __builtin_amdgcn_s_barrier();
         __builtin_amdgcn_sched_barrier(0);
 
