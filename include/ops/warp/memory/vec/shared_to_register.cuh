@@ -40,12 +40,14 @@ __device__ inline static void load(RV &dst, const SV &src) {
             const uint32_t addr = reinterpret_cast<uintptr_t>(&src.data[0]) + lane_offset * sizeof(U);
             #pragma unroll
             for(auto w = 0; w < dst.outer_dim; w++) {
-                asm volatile(
-                    "ds_read_b32 %0, %1 offset:%2\n"
-                    : "=v"(dst[w][0])
-                    : "v"(addr), "i"(w * 16 * sizeof(U))
-                    : "memory"
-                );
+                for (auto idx = 0; idx < dst.inner_dim; idx++) {
+                    asm volatile(
+                        "ds_read_b64 %0, %1 offset:%2\n"
+                        : "=v"(dst[w][idx])
+                        : "v"(addr), "i"((w * 16 + idx * 2) * sizeof(U))
+                        : "memory"
+                    );
+                }
             }
         } else {
             const int offset = (laneid % dst.aligned_threads) * dst.stride;
