@@ -255,8 +255,3 @@ test_result validate(T *d_i, T *d_o, const std::vector<float> &i_ref, std::vecto
     HipCheckError();
     return good ? test_result::PASSED : test_result::FAILED;
 }
-
-template<typename T>
-test_result validate(T *d_i, T *d_o, const std::vector<float> &i_ref, std::vector<float> &o_ref, std::string test_name, int cols, float eps=5e-2) {
-    return validate<T, T>(d_i, d_o, i_ref, o_ref, test_name, cols, eps);
-}
