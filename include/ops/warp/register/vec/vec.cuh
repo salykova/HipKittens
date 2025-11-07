@@ -8,3 +8,5 @@
 // #include "conversions.cuh"
 #include "maps.cuh"
 #include "reductions.cuh"
+
+#include "assembly/vec.cuh"

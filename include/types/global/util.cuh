@@ -26,7 +26,7 @@ template<int d> using make_arg_t = std::conditional_t<rdim<d>, size_t, std::null
 }
 
 namespace detail {
-template<typename T> concept tile = ducks::st::all<T> || ducks::rt::all<T>;
+template<typename T> concept tile = ducks::st::all<T> || ducks::rt::all<T> || ducks::art::all<T>;
 template<typename T> concept vec  = ducks::sv::all<T> || ducks::rv::all<T>;
 }
 

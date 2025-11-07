@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include "../../../../common/common.cuh"
 #include <hip/hip_runtime.h>
 #include <hip/amd_detail/amd_hip_runtime.h>
 #include <hip/amd_detail/hip_ldg.h>
@@ -65,12 +66,6 @@ __device__ inline float4 load_global_vec4(const float4* gptr) {
     return v;   
 }
 
-using i32x4 = int32_t __attribute__((ext_vector_type(4)));
-struct buffer_resource {
-    uint64_t ptr;
-    uint32_t range;
-    uint32_t config;
-};
 __device__ inline buffer_resource make_buffer_resource(uint64_t ptr, uint32_t range, uint32_t config) {
     return {ptr, range, config};
 }

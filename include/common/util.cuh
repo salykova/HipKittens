@@ -50,6 +50,12 @@ __device__ __forceinline__ int warpid() { return threadIdx.x >> 6; }
  */
 __device__ __forceinline__ int laneid() { return threadIdx.x & 0x3f; }
 
+using i32x4 = int32_t __attribute__((ext_vector_type(4)));
+struct buffer_resource {
+    uint64_t ptr;
+    uint32_t range;
+    uint32_t config;
+};
 
 /**
  * @brief Compute the ceiling division of two integers.

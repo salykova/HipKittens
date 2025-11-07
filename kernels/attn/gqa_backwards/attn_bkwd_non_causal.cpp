@@ -75,65 +75,65 @@ __global__ __attribute__((amdgpu_num_vgpr(30))) void attend_bwd_combined_ker(con
   sv_fl<STEP_QO> (&delta_smem)[2] = al.allocate<sv_fl<STEP_QO>, 2>();
 
   // Register tiles
-  using Q_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<368, 383>>, 4>; // 16 registers - a[112:127]
-  using dO_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<78, 93>>, 4>; // 16 registers - v[72:87]
-  using dO_col_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<94, 109>>, 4>; // 16 registers - v[88:103]
-  using K_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<256, 303>, ducks::rt::range<62, 77>>, 4>; // 64 registers - a[0:47] & v[56:71]
-  using V_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<304, 367>>, 4>; // 64 registers - a[48:111]
-  using P_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<46, 61>>, 4>; // 16 registers - v[40:55]
-  using dP_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<62, 77>>, 4>; // 16 registers - v[56:71]
-  using P_bf16_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<118, 125>>, 2>; // 8 registers - v[116:123]
-  using dP_bf16_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<62, 69>>, 2>; // 8 registers - v[56:63]
-  using P_bf16_col_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<118, 125>>, 4>; // 8 registers
-  using dP_bf16_col_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<62, 69>>, 4>; // 8 registers
-  using dS_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<30, 61>>, 4>; // 32 registers - v[24:55]
-  using dQ_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<110, 117>>, 4>; // 8 registers - v[108:115]
-  ducks::rt::clobber<Q_ranges>();
-  ducks::rt::clobber<dO_ranges>();
-  ducks::rt::clobber<dO_col_ranges>();
-  ducks::rt::clobber<K_ranges>();
-  ducks::rt::clobber<V_ranges>();
-  ducks::rt::clobber<P_ranges>();
-  ducks::rt::clobber<dP_ranges>();
-  ducks::rt::clobber<P_bf16_ranges>();
-  ducks::rt::clobber<dP_bf16_ranges>();
-  ducks::rt::clobber<dS_ranges>();
-  ducks::rt::clobber<dQ_ranges>();
+  using Q_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<368, 383>>, 4>; // 16 registers - a[112:127]
+  using dO_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<78, 93>>, 4>; // 16 registers - v[72:87]
+  using dO_col_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<94, 109>>, 4>; // 16 registers - v[88:103]
+  using K_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<256, 303>, ducks::art::range<62, 77>>, 4>; // 64 registers - a[0:47] & v[56:71]
+  using V_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<304, 367>>, 4>; // 64 registers - a[48:111]
+  using P_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<46, 61>>, 4>; // 16 registers - v[40:55]
+  using dP_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<62, 77>>, 4>; // 16 registers - v[56:71]
+  using P_bf16_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<118, 125>>, 2>; // 8 registers - v[116:123]
+  using dP_bf16_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<62, 69>>, 2>; // 8 registers - v[56:63]
+  using P_bf16_col_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<118, 125>>, 4>; // 8 registers
+  using dP_bf16_col_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<62, 69>>, 4>; // 8 registers
+  using dS_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<30, 61>>, 4>; // 32 registers - v[24:55]
+  using dQ_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<110, 117>>, 4>; // 8 registers - v[108:115]
+  ducks::art::clobber<Q_ranges>();
+  ducks::art::clobber<dO_ranges>();
+  ducks::art::clobber<dO_col_ranges>();
+  ducks::art::clobber<K_ranges>();
+  ducks::art::clobber<V_ranges>();
+  ducks::art::clobber<P_ranges>();
+  ducks::art::clobber<dP_ranges>();
+  ducks::art::clobber<P_bf16_ranges>();
+  ducks::art::clobber<dP_bf16_ranges>();
+  ducks::art::clobber<dS_ranges>();
+  ducks::art::clobber<dQ_ranges>();
 
 
-  using dV_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<128, 255>>, 16>; // 128 registers v[128:255]
-  using dK_ranges = ducks::rt::split_many_t<ducks::rt::type_list<ducks::rt::range<384, 511>>, 16>; // 128 registers a[128:255]
-  ducks::rt::clobber<dV_ranges>();
-  ducks::rt::clobber<dK_ranges>();
+  using dV_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<128, 255>>, 16>; // 128 registers v[128:255]
+  using dK_ranges = ducks::art::split_many_t<ducks::art::type_list<ducks::art::range<384, 511>>, 16>; // 128 registers a[128:255]
+  ducks::art::clobber<dV_ranges>();
+  ducks::art::clobber<dK_ranges>();
 
-  rt<bf16, DOT_SLICE_QO, D, row_l, rt_16x32_s, Q_ranges> Q_i; // 16 registers
-  rt<bf16, DOT_SLICE_QO, D, row_l, rt_16x32_s, dO_ranges> dO_i; // 16 registers
-  rt<bf16, DOT_SLICE_QO, D, col_l, rt_16x32_s, Q_ranges> Q_i_col; // 16 registers
-  rt<bf16, DOT_SLICE_QO, D, col_l, rt_16x32_s, dO_col_ranges> dO_i_col; // 16 registers
-  rt<bf16, WARP_SIZE_KV, D, row_l, rt_16x32_s, K_ranges> K_j; // 64 registers
-  rt<bf16, WARP_SIZE_KV, D, row_l, rt_16x32_s, V_ranges> V_j; // 64 registers
+  art<bf16, DOT_SLICE_QO, D, row_l, rt_16x32_s, Q_ranges> Q_i; // 16 registers
+  art<bf16, DOT_SLICE_QO, D, row_l, rt_16x32_s, dO_ranges> dO_i; // 16 registers
+  art<bf16, DOT_SLICE_QO, D, col_l, rt_16x32_s, Q_ranges> Q_i_col; // 16 registers
+  art<bf16, DOT_SLICE_QO, D, col_l, rt_16x32_s, dO_col_ranges> dO_i_col; // 16 registers
+  art<bf16, WARP_SIZE_KV, D, row_l, rt_16x32_s, K_ranges> K_j; // 64 registers
+  art<bf16, WARP_SIZE_KV, D, row_l, rt_16x32_s, V_ranges> V_j; // 64 registers
   constexpr int L_i = 126;
   constexpr int delta_i = 127;
 
-  rt<float, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, P_ranges> P_ij; // 16 registers
-  rt<float, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, dP_ranges> dP_ij; // 16 registers
-  rt<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, P_bf16_ranges> P_ij_bf16; // 8 registers
-  rt<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, dP_bf16_ranges> dP_ij_bf16; // 8 registers
-  rt<bf16, WARP_SIZE_KV, DOT_SLICE_QO, row_l, rt_16x16_s, ducks::rt::transpose_2d<dP_bf16_ranges, 1, 4>> dP_ij_bf16_accum_row; // 8 registers
+  art<float, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, P_ranges> P_ij; // 16 registers
+  art<float, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, dP_ranges> dP_ij; // 16 registers
+  art<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, P_bf16_ranges> P_ij_bf16; // 8 registers
+  art<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x16_s, dP_bf16_ranges> dP_ij_bf16; // 8 registers
+  art<bf16, WARP_SIZE_KV, DOT_SLICE_QO, row_l, rt_16x16_s, ducks::art::transpose_2d<dP_bf16_ranges, 1, 4>> dP_ij_bf16_accum_row; // 8 registers
 
-  rt<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x32_s, P_bf16_col_ranges> P_ij_bf16_col; // 8 registers
-  rt<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x32_s, dP_bf16_col_ranges> dP_ij_bf16_col; // 8 registers
+  art<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x32_s, P_bf16_col_ranges> P_ij_bf16_col; // 8 registers
+  art<bf16, DOT_SLICE_QO, WARP_SIZE_KV, col_l, rt_16x32_s, dP_bf16_col_ranges> dP_ij_bf16_col; // 8 registers
 
-  rt<bf16, 256, 32, col_l, rt_32x16_4_s, K_ranges> K_j_col; // 64 registers // for dq
-  rt<bf16, 256, 16, col_l, rt_32x16_4_s, dS_ranges> dP_ij_bf16_col_T; // 32 registers // for dq
+  art<bf16, 256, 32, col_l, rt_32x16_4_s, K_ranges> K_j_col; // 64 registers // for dq
+  art<bf16, 256, 16, col_l, rt_32x16_4_s, dS_ranges> dP_ij_bf16_col_T; // 32 registers // for dq
 
-  rt<float, D, WARP_SIZE_KV, col_l, rt_32x32_s, dK_ranges> dK_j_T; // 128 registers
-  rt<float, D, WARP_SIZE_KV, col_l, rt_32x32_s, dV_ranges> dV_j_T; // 128 registers
-  rt<float, 32, 16, col_l, rt_16x16_s, dQ_ranges> dQ_i_T; // 8 registers // for dq
-  rt<float, 16, 32, row_l, rt_16x16_s, ducks::rt::transpose_2d<dQ_ranges, 2, 1>> dQ_i; // 8 registers // for dq
+  art<float, D, WARP_SIZE_KV, col_l, rt_32x32_s, dK_ranges> dK_j_T; // 128 registers
+  art<float, D, WARP_SIZE_KV, col_l, rt_32x32_s, dV_ranges> dV_j_T; // 128 registers
+  art<float, 32, 16, col_l, rt_16x16_s, dQ_ranges> dQ_i_T; // 8 registers // for dq
+  art<float, 16, 32, row_l, rt_16x16_s, ducks::art::transpose_2d<dQ_ranges, 2, 1>> dQ_i; // 8 registers // for dq
 
   // This is used for both dK_j_T and dV_j_T
-  rt<float, WARP_SIZE_KV, D, row_l, rt_32x32_s, ducks::rt::transpose_2d<dV_ranges, 4, 2>> dV_j;
+  art<float, WARP_SIZE_KV, D, row_l, rt_32x32_s, ducks::art::transpose_2d<dV_ranges, 4, 2>> dV_j;
 
   int tic = 0, toc = 1;
 
