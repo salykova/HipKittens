@@ -32,26 +32,33 @@ __device__ static inline void reduce(
         typename base_types::packing<typename RV::dtype>::unpacked_type &dst_accum,
         const RV &src,
         const typename base_types::packing<typename RV::dtype>::unpacked_type &src_accum) {
+
     using T = base_types::packing<typename RV::dtype>::unpacked_type;
     int laneid = kittens::laneid();
+
     if constexpr (std::is_same_v<typename RV::layout, ortho_l>) {
+
+        const int max_shift = RV::reductions / 2;
+
         T accum = src[0][0];
         #pragma unroll
         for(int i = 1; i < src.outer_dim; i++) {
             accum = op::template op<T>(accum, src[i][0]);
         }
-        // we've now reduced everything into 32 distinct values, replicated across lanes x, x+1, x+2, x+3 for x≡0(mod32)
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 16));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 8));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 4));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 2));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 1));
-        // we've now reduced everything into 1 distinct value, replicated across lanes 0, 1, 2, 3
+
+        #pragma unroll
+        for(int shift = max_shift; shift > 0; shift /= 2) {
+            accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, shift));
+        }
+
         if constexpr (!reset) accum = op::template op<T>(accum, src_accum);
-        // final result has now been achieved (incorporating src_accum if necessary), finally broadcast back to all threads.
         dst_accum = packed_shfl(kittens::MASK_ALL, accum, 0);
     }
     else if constexpr (std::is_same_v<typename RV::layout, align_l>) {
+
+        const int leader = 0;
+        const int max_shift = RV::threads_per_reduction / 2;
+
         T accum = op::template op<T>(src[0][0].x, src[0][0].y);
 
         #pragma unroll
@@ -69,26 +76,29 @@ __device__ static inline void reduce(
                 accum = op::template op<T>(accum,       src[i][j].y);
             }
         }
-        // we've now reduced everything into 2 distinct values, replicated across lanes x, x+32 for x<32
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 32));
-        // we've now reduced everything into 1 distinct value, replicated across lanes 0, 8, 16, 24, ..., 54
+
+        for (int shift = max_shift; shift > 0; shift--) {
+            accum = op::template op<T>(accum, __shfl_down(accum, shift * RV::aligned_threads));
+        }
+
+        accum = __shfl(accum, leader);
+
         if constexpr (!reset) accum = op::template op<T>(accum, src_accum);
-        // final result has now been achieved (incorporating src_accum if necessary), finally broadcast back to all threads from lane 0
-        dst_accum = packed_shfl(kittens::MASK_ALL, accum, 0);
+        dst_accum = accum;
     }
     else if constexpr (std::is_same_v<typename RV::layout, naive_l>) {
+        const int max_shift = kittens::WARP_THREADS / 2;
+
         T accum = src[0][0];
         #pragma unroll
         for(int i = 1; i < src.inner_dim; i++) {
             accum = op::template op<T>(accum, src[0][i]);
         }
 
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 32));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 16));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 8));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 4));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 2));
-        accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, 1));
+        #pragma unroll
+        for(int shift = max_shift; shift > 0; shift /= 2) {
+            accum = op::template op<T>(accum, packed_shfl_down(kittens::MASK_ALL, accum, shift));
+        }
         if constexpr (!reset) accum = op::template op<T>(accum, src_accum);
         dst_accum = packed_shfl(kittens::MASK_ALL, accum, 0);
     }
