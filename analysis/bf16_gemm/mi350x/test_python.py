@@ -12,8 +12,9 @@ random.seed(0)
 
 # Inputs
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 2048
-A = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / 10.0  
-B = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / 10.0  
+scale = 1.0
+A = torch.randn(N, N, dtype=torch.bfloat16, device='cuda')  / scale
+B = torch.randn(N, N, dtype=torch.bfloat16, device='cuda')  / scale
 Bt = B.t().contiguous()  # Transpose B for the kernel
 
 filename = sys.argv[2]
@@ -26,10 +27,16 @@ end_event = torch.cuda.Event(enable_timing=True)
 flops_ref = (2 * N**3)  # FLOPs for reference
 
 # Reference matmul using PyTorch
+
 for _ in range(num_warmup):
     C_pytorch = torch.matmul(A, Bt)
 timings_pytorch = []
+torch.random.manual_seed(0)
+random.seed(0)
 for _ in range(num_iters):
+    A = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / scale
+    B = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / scale
+    Bt = B.t().contiguous()  # Transpose B for the kernel
     torch.cuda.synchronize()
     start_event.record()
     C_pytorch = torch.matmul(A, Bt)
@@ -43,11 +50,17 @@ tflops_pytorch = flops_ref / (avg_time_pytorch * 1e9)
 print(f"PyTorch reference average execution time: {avg_time_pytorch:.4f} ms")
 print(f"PyTorch reference performance: {tflops_pytorch:.2f} TFLOPS for {N}x{N} matrix multiplication.\n")
 
+
 # Reference matmul using AITER (AMD)
 for _ in range(num_warmup):
     C_aiter = tgemm.mm(A, B, None, None, None)
 timings_aiter = []
+torch.random.manual_seed(0)
+random.seed(0)
 for _ in range(num_iters):
+    A = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / scale
+    B = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / scale
+    Bt = B.t().contiguous()  # Transpose B for the kernel
     torch.cuda.synchronize()
     start_event.record()
     C_aiter = tgemm.mm(A, B, None, None, None)
@@ -61,12 +74,18 @@ tflops_aiter = flops_ref / (avg_time_aiter * 1e9)
 print(f"AITER (AMD) reference average execution time: {avg_time_aiter:.4f} ms")
 print(f"AITER (AMD) reference performance: {tflops_aiter:.2f} TFLOPS for {N}x{N} matrix multiplication.\n")
 
+
 # Kernel matmul
 C = torch.zeros(N, N, dtype=torch.bfloat16, device='cuda')
 for _ in range(num_warmup):
     tk_kernel.dispatch_micro(A, B, C)
 timings = []
+torch.random.manual_seed(0)
+random.seed(0)
 for _ in range(num_iters):
+    A = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / scale
+    B = torch.randn(N, N, dtype=torch.bfloat16, device='cuda') / scale
+    Bt = B.t().contiguous()  # Transpose B for the kernel
     torch.cuda.synchronize()
     start_event.record()
     tk_kernel.dispatch_micro(A, B, C)
@@ -83,11 +102,11 @@ print(f"Performance: {tflops:.2f} TFLOPS for {N}x{N} matrix multiplication.\n")
 
 # Compare against reference
 C_float = C.float()
-C_ref_float = C_pytorch.float()
-diff = (C_float - C_ref_float).abs()
+C_pytorch_float = C_pytorch.float()
+diff = (C_float - C_pytorch_float).abs()
 max_error = diff.max().item()
 mean_error = diff.mean().item()
-error_count = (diff > 0.1).sum().item()
+error_count = (diff > 0.01*C_pytorch_float.abs()).sum().item()
 print(f"Max error between kernel and reference: {max_error}")
 print(f"Max error: {max_error}")
 print(f"Mean error: {mean_error}")

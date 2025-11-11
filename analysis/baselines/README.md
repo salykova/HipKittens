@@ -3,6 +3,8 @@
 
 This README describes the baseline kernels we use from third party libraries at the time of this work (October 2025). We benchmarked all kernels using 500 warmup and 100 repeat iterations. 
 
+**Warning:** Many software packages are under continuous development. We provide instructions as of 11/09/2025. 
+
 ### Composable kernel
 
 **Attention**
@@ -77,7 +79,7 @@ Backwards:
 # causal gqa
 ./bin/tile_example_fmha_bwd -prec=bf16 -b=16 -h=64 -h_k=8 -d=128 -s=1024 -mask=1 -warmup=500 -repeat=100 -kname=1
 ./bin/tile_example_fmha_bwd -prec=bf16 -b=16 -h=64 -h_k=8 -d=128 -s=2048 -mask=1 -warmup=500 -repeat=100 -kname=1
-./bin/tile_example_fmha_bwd -prec=bf16 -b=16 -h=64 -h_k=8 -d=128 -s=4096 -mask=1 -warmup=500 -repeat=100 -kname=1
+./bin/tile_example_fmha_bwd -prec=bf16 -b=16 -h=64 -h_k=8 -d=128 -s=4096 -mask=1 -warmup=500 -repeat=100 -kname=1 
 ./bin/tile_example_fmha_bwd -prec=bf16 -b=16 -h=64 -h_k=8 -d=128 -s=8192 -mask=1 -warmup=500 -repeat=100 -kname=1
 ./bin/tile_example_fmha_bwd -prec=bf16 -b=16 -h=64 -h_k=8 -d=128 -s=16384 -mask=1 -warmup=500 -repeat=100 -kname=1
 ```
@@ -159,11 +161,12 @@ python baselines/attn/triton_gemm_v03.py
 
 BF16 GEMM:
 ```bash
-hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 1024 -n 1024 -k 1024
-hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 2048 -n 2048 -k 2048
-hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 4096 -n 4096 -k 4096
-hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 8192 -n 8192 -k 8192
-hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 16384 -n 16384 -k 16384
+# Note the hpl and norm_dist perform basically the same. We use torch.randn in PyTorch so consider norm_dist here. 
+hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 1024 -n 1024 -k 1024 --initialization norm_dist
+hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 2048 -n 2048 -k 2048 --initialization norm_dist
+hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 4096 -n 4096 -k 4096 --initialization norm_dist
+hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 8192 -n 8192 -k 8192 --initialization norm_dist
+hipblaslt-bench --batch_count 1 --a_type bf16_r --b_type bf16_r --c_type bf16_r --d_type bf16_r --rotating 512 --iters 100 --cold_iters 500 -m 16384 -n 16384 -k 16384 --initialization norm_dist
 ```
 
 FP8 GEMM:
@@ -197,6 +200,76 @@ cd build/release/
 ./clients/hipblaslt-bench --api_method c -m 4096 -n 4096 -k 4096 --alpha 1 --beta 0 --transA T --transB N --batch_count 1 --scaleA 3 --scaleB 3 --a_type f6_r --b_type f6_r --c_type f16_r --d_type f16_r --compute_type f32_r --rotating 0 --cold_iters 500 --iters 100
 ./clients/hipblaslt-bench --api_method c -m 8192 -n 8192 -k 8192 --alpha 1 --beta 0 --transA T --transB N --batch_count 1 --scaleA 3 --scaleB 3 --a_type f6_r --b_type f6_r --c_type f16_r --d_type f16_r --compute_type f32_r --rotating 0 --cold_iters 500 --iters 100
 ./clients/hipblaslt-bench --api_method c -m 16384 -n 16384 -k 16384 --alpha 1 --beta 0 --transA T --transB N --batch_count 1 --scaleA 3 --scaleB 3 --a_type f6_r --b_type f6_r --c_type f16_r --d_type f16_r --compute_type f32_r --rotating 0 --cold_iters 500 --iters 1000
+```
+
+## Mojo baselines
+
+Setup the docker and environment (https://docs.modular.com/mojo/manual/get-started/):
+```
+# This docker recommended by mojo gives errors (as of 11/8/2025).
+docker.io/modular/max-amd-base 
+# amd nightly is also not supporting rocm 7.0 currently.
+
+# So we instead use beta:
+podman run -it \
+    --ipc=host \
+    --network=host \
+    --privileged \
+    --cap-add=CAP_SYS_ADMIN \
+    --cap-add=SYS_PTRACE \
+    --security-opt seccomp=unconfined \
+    --device=/dev/kfd \
+    --device=/dev/dri \
+    -v $(pwd):/workdir/ \
+    -e USE_FASTSAFETENSOR=1 \
+    -e SAFETENSORS_FAST_GPU=1 \
+    --entrypoint /bin/bash \
+    rocm/7.0-preview:rocm7.0_preview_pytorch_training_mi35x_beta 
+
+# if you don't have it, install pixi
+curl -fsSL https://pixi.sh/install.sh | sh
+export PATH="/root/.pixi/bin:$PATH"
+
+# create a project
+pixi init life \
+  -c https://conda.modular.com/max-nightly/ -c conda-forge \
+  && cd life
+
+# install the modular conda package
+pixi add modular
+
+# setup the VM
+pixi shell
+```
+
+Next install the repository:
+
+```bash
+git clone https://github.com/modular/modular.git
+cd max/kernels/benchmarks/gpu/
+```
+
+Run the kernels (you can manually edit these files to choose your desired problem dimensions):
+```
+mojo bench_mha.mojo
+mojo bench_matmul.mojo
+```
+
+**Warning:** As of 11/09/2025, we are not sure if the [mha causal numbers are correctly reported](https://github.com/modular/modular/issues/5557).
+
+
+## TileLang baselines
+
+```bash
+cd /workdir/projects/tilelang
+rm -rf build
+# Set environment for ROCm
+export USE_ROCM=/opt/rocm
+export USE_CUDA=0
+# Install with pip (let it handle the entire build)
+pip install -e . -v
+# If that fails, try with explicit backend:
+pip install -e . --config-settings=cmake.args="-DUSE_CUDA=OFF" -v
 ```
 
 
