@@ -49,6 +49,11 @@ podman run -it \
 # set the environment variables
 cd HipKittens/
 source env.src
+
+# install aiter (baseline kernels)
+git clone --recursive https://github.com/ROCm/aiter.git
+cd aiter
+python3 setup.py develop
 ```
 
 ## Unit tests
