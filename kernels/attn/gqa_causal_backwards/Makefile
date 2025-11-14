@@ -69,7 +69,7 @@ all: tk_kernel_bkwd tk_kernel_bkwd_prep tk_kernel_fwd
 # Explicit rules for each kernel
 # --------------------------------------------------------------------
 
-tk_kernel_bkwd: attn_bkwd_non_causal.cpp
+tk_kernel_bkwd: attn_bkwd_causal.cpp
 	@mkdir -p $(LOGDIR)
 	$(HIPCXX) $< $(HIPFLAGS) $(ICXXFLAGS) $(ICPPFLAGS) $(ILDFLAGS) \
 	    -o $@$(shell python3-config --extension-suffix) 2>&1 | tee $(LOGFILE)
@@ -79,7 +79,7 @@ tk_kernel_bkwd_prep: attn_bkwd_prep.cpp
 	$(HIPCXX) $< $(HIPFLAGS) $(ICXXFLAGS) $(ICPPFLAGS) $(ILDFLAGS) \
 	    -o $@$(shell python3-config --extension-suffix) 2>&1 | tee $(LOGFILE)
 
-tk_kernel_fwd: attn_fwd_non_causal.cpp
+tk_kernel_fwd: attn_fwd_causal.cpp
 	@mkdir -p $(LOGDIR)
 	$(HIPCXX) $< $(HIPFLAGS) $(ICXXFLAGS) $(ICPPFLAGS) $(ILDFLAGS) \
 	    -o $@$(shell python3-config --extension-suffix) 2>&1 | tee $(LOGFILE)
