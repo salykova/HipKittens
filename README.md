@@ -25,6 +25,8 @@ We support CDNA3 and CDNA 4.
 
 ```bash
 # clone the repo
+git clone git@github.com:HazyResearch/HipKittens.git
+**or**
 git clone https://github.com/HazyResearch/HipKittens.git
 
 # obtain an amd docker using docker pull or podman pull
