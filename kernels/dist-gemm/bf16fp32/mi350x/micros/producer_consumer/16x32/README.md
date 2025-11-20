@@ -1,7 +1,7 @@
 # Distributed Producer-Consumer GEMM Kernel
 
 
-### Start docker
+## Start docker
 
 ```bash
  docker run -it \
@@ -21,11 +21,13 @@
     rocm/7.0-preview:rocm7.0_preview_pytorch_training_mi35x_beta \
     bash
 ```
-### Install dependacies
+## Install dependacies
 
 ```terminal
 apt-get install -y libopenmpi-dev openmpi-bin
 ```
+
+## Build and Run
 
 ```terminal
 cd kernels/dist-gemm/bf16fp32/mi350x/micros/producer_consumer/16x32/
