@@ -236,7 +236,10 @@ for device in ['mi355x']:
         ax.set_xticks(x)
         ax.set_xticklabels(matrix_sizes, fontsize=16)
         ax.tick_params(axis='y', labelsize=16)
-        ax.legend(fontsize=14)
+        # Order legend to match bar order (left to right): PyTorch SDPA, Triton, Composable Kernel, AITER (ASM), HipKittens
+        ax.legend([bars3, bars2, bars4, bars0, bars1], 
+                  ['PyTorch SDPA', 'Triton', 'Composable Kernel', 'AITER (ASM)', 'HipKittens'],
+                  fontsize=14)
 
         plt.tight_layout()
         plt.show()

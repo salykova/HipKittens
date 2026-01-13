@@ -120,7 +120,10 @@ for device in ['mi350x', 'mi355x']:
     ax.set_xticks(x)
     ax.set_xticklabels(matrix_sizes, fontsize=14)
     ax.tick_params(axis='y', labelsize=14)
-    ax.legend(fontsize=16)
+    # Order legend to match bar order (left to right): Composable Kernel, HipblasLT, HipKittens
+    ax.legend([bars5, bars2, bars3], 
+              ['Composable Kernel', 'HipblasLT', 'HipKittens'],
+              fontsize=16)
 
     plt.tight_layout()
     plt.show()
